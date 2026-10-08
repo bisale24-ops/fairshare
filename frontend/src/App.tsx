@@ -1,0 +1,38 @@
+import { useEffect, useState } from "react";
+import { api, getToken, setToken, type User } from "./api";
+import { useHash } from "./hooks";
+import { LiveProvider } from "./live";
+import { AuthPage } from "./pages/AuthPage";
+import { GroupPage } from "./pages/GroupPage";
+import { GroupsPage } from "./pages/GroupsPage";
+import { JoinPage } from "./pages/JoinPage";
+import { Header } from "./components/Header";
+
+export default function App() {
+  const hash = useHash();
+  const [user, setUser] = useState<User | null>(null);
+  const [checked, setChecked] = useState(!getToken());
+
+  useEffect(() => {
+    if (!getToken()) return;
+    api.me().then(setUser).catch(() => setToken(null)).finally(() => setChecked(true));
+  }, []);
+
+  if (!checked) return <div className="center muted">Загрузка…</div>;
+  if (!user) {
+    return <AuthPage onAuth={(u) => { setUser(u); if (!location.hash) location.hash = "/"; }} next={hash} />;
+  }
+
+  const logout = () => { setToken(null); setUser(null); location.hash = "/"; };
+  const join = hash.match(/^\/join\/(.+)$/);
+  const group = hash.match(/^\/groups\/(\d+)$/);
+
+  return (
+    <LiveProvider>
+      <Header user={user} onLogout={logout} />
+      <main className="container">
+        {join ? <JoinPage token={join[1]} /> : group ? <GroupPage id={Number(group[1])} user={user} /> : <GroupsPage />}
+      </main>
+    </LiveProvider>
+  );
+}

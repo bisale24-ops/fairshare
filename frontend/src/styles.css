@@ -1,0 +1,105 @@
+/* Tokens taken from the Notion style on styles.refero.design: one blue accent on a warm, near-monochrome canvas. */
+:root {
+  --blue: #0075de;
+  --blue-tint: #e6f3fe;
+  --canvas: #f6f5f4;
+  --paper: #ffffff;
+  --ink: #111111;
+  --graphite: #615d59;
+  --line: #e4e1de;
+  --green: #1aae39;
+  --coral: #f64932;
+  --marigold: #ffb110;
+  --radius: 12px;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--canvas); color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+}
+h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h3 { font-size: 16px; margin: 0 0 10px; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.muted { color: var(--graphite); }
+.small { font-size: 13px; }
+.spacer { flex: 1; }
+.center { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.container { max-width: 860px; margin: 0 auto; padding: 20px 16px 80px; display: grid; gap: 14px; }
+.topbar {
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--paper);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10;
+}
+.brand { font-weight: 700; font-size: 18px; color: var(--ink); }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 10px; }
+.card.inner { background: var(--canvas); }
+.card.narrow { max-width: 480px; margin: 40px auto; }
+.auth { width: min(420px, 100%); }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row.head { align-items: flex-end; margin-top: 4px; }
+.right { text-align: right; }
+.link-row { color: var(--ink); padding: 6px 0; }
+.list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.currency-block { border-top: 1px solid var(--line); padding-top: 10px; }
+.currency-block:first-of-type { border-top: 0; padding-top: 0; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--graphite); }
+input, select, button { font: inherit; }
+input, select {
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); min-width: 0;
+}
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+input[type="checkbox"] { width: 18px; height: 18px; padding: 0; }
+.narrow-input { width: 96px; text-align: right; }
+.grid3 { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+button { cursor: pointer; border-radius: 8px; border: 1px solid transparent; padding: 8px 14px; }
+button:disabled { opacity: 0.55; cursor: default; }
+.primary { background: var(--blue); color: #fff; font-weight: 600; }
+.primary:hover:not(:disabled) { background: #0066c2; }
+.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.ghost:hover { background: var(--canvas); }
+.link { background: none; color: var(--blue); padding: 2px 6px; }
+.link.danger { color: var(--coral); }
+.danger-btn { background: #fff; color: var(--coral); border-color: var(--coral); font-weight: 600; justify-self: start; }
+.small-btn { padding: 5px 10px; font-size: 13px; }
+.error { background: #fff0ed; color: #b3260f; border: 1px solid #ffc8bd; padding: 8px 12px; border-radius: 8px; }
+.live { background: var(--blue-tint); color: #004d94; padding: 6px 12px; border-radius: 8px; }
+.ok { color: #12802a; } .warn { color: #b3260f; }
+.money { font-variant-numeric: tabular-nums; font-weight: 600; }
+.money.pos { color: var(--green); } .money.neg { color: var(--coral); } .money.zero { color: var(--graphite); }
+.money.big { font-size: 22px; }
+.tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--canvas); color: var(--graphite); border: 1px solid var(--line); }
+.tag.pending { background: #fff6dd; border-color: var(--marigold); color: #7a5600; }
+.tag.confirmed { background: #e7f7ea; border-color: var(--green); color: #12802a; }
+.tag.rejected { background: #fff0ed; border-color: var(--coral); color: #b3260f; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { background: none; border-radius: 8px 8px 0 0; color: var(--graphite); border-bottom: 2px solid transparent; }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--blue); font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.seg button { background: var(--paper); border-radius: 0; border: 0; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--blue-tint); color: #004d94; font-weight: 600; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+legend { color: var(--graphite); font-size: 13px; padding: 0 6px; }
+.split { display: grid; gap: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: var(--canvas); border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+.expense { gap: 6px; }
+.report { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; display: grid; gap: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.menu { position: relative; }
+.popover {
+  position: absolute; right: 0; top: 110%; width: 320px; max-height: 70vh; overflow: auto; background: var(--paper);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; display: grid; gap: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.popover.wide { width: min(460px, 90vw); }
+.popover pre { white-space: pre-wrap; margin: 6px 0 0; font: 13px/1.4 inherit; }
+.note { color: var(--ink); padding: 8px; border-radius: 8px; font-size: 14px; }
+.note.unread { background: var(--blue-tint); }
+.badge { background: var(--coral); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 6px; margin-left: 4px; }
+@media (max-width: 560px) {
+  .money.big { font-size: 18px; }
+  .topbar { flex-wrap: wrap; }
+}
