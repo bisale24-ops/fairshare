@@ -3,16 +3,19 @@
 **Tool:** Claude Code (CLI) with Claude Sonnet 5.5 as the coding agent. It is the tool I use every day, and it
 can run the code, the tests and the browser checks itself, so the claims in this repo come from commands that were run.
 
-## What I (the human) actually told the agent
+## Tasks I set (summary, not a transcript)
 
-Verbatim, in Russian, as sent:
+Written in business wording; this describes what I asked for and what came back, it is not a copy of the chat. The full list with results
+is in `docs/SESSION-LOG.md`, section 1. In short:
 
-1. «проверь почту там ответили по вакансии и предложили тестовые задания на выбор» — the agent read the e-mail
-   and the PDF with 14 cases and recommended case 6, because it overlaps with my own SplitBill app and my Tally MCP project.
-2. «кейс 6, срок до субботы, эссе делаем» — my decision: case 6, due Saturday, essay included.
+1. Check the mail: the employer sent test tasks to choose from. The agent read them and recommended case 6 (it overlaps with my own
+   SplitBill and Tally MCP projects).
+2. I chose case 6, delivery by Saturday 10 October, with the optional essay.
+3. Finish everything left unfinished; then: improve the product, run an independent review and fix what it finds, fix e2e flakiness,
+   list the remaining problems and fix them, verify and fix behaviour when the API process crashes, publish the repository.
 
-Standing instructions I keep for every project (global CLAUDE.md): take design references from refero.design,
-and build to win rather than to get a minimum through.
+Standing instructions I keep for every project (global CLAUDE.md): take design references from refero.design, and build to win rather
+than to get a minimum through.
 
 ## What the agent decided on its own (and I have not reviewed line by line yet)
 
