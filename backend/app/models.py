@@ -89,6 +89,7 @@ class Expense(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # bumped by every edit; clients echo it back
     shares: Mapped[list[ExpenseShare]] = relationship(cascade="all, delete-orphan", lazy="selectin")
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_expense_amount_positive"),
@@ -111,6 +112,7 @@ class Settlement(Base):
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
     from_user: Mapped[int] = mapped_column(ForeignKey("users.id"))
     to_user: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))  # whoever recorded it; the OTHER party confirms
     amount: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(10), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

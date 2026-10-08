@@ -27,6 +27,16 @@ def notifications(user: User = Depends(current_user), db: Session = Depends(get_
     ]
 
 
+@router.post("/notifications/{notification_id}/read")
+def mark_one_read(notification_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    n = db.get(Notification, notification_id)
+    if not n or n.user_id != user.id:
+        raise HTTPException(404, "Notification not found")
+    n.read = True
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/notifications/read")
 def mark_read(user: User = Depends(current_user), db: Session = Depends(get_db)):
     for n in db.scalars(select(Notification).where(Notification.user_id == user.id, Notification.read.is_(False))):

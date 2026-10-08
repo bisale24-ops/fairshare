@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -48,6 +48,7 @@ def _compute_shares(data: ExpenseIn, members: set[int]) -> tuple[dict[int, int],
 def expense_view(e: Expense, names: dict[int, str]) -> dict:
     return {
         "id": e.id,
+        "version": e.version,
         "group_id": e.group_id,
         "payer_id": e.payer_id,
         "payer_name": names.get(e.payer_id),
@@ -67,6 +68,15 @@ def expense_view(e: Expense, names: dict[int, str]) -> dict:
             for s in sorted(e.shares, key=lambda s: s.user_id)
         ],
     }
+
+
+def involved_names(db: Session, group_id: int, expenses: list[Expense]) -> dict[int, str]:
+    """Names of current members AND of anyone who took part in these expenses but has since left."""
+    ids = set(member_ids(db, group_id))
+    for e in expenses:
+        ids.add(e.payer_id)
+        ids.update(s.user_id for s in e.shares)
+    return user_names(db, list(ids))
 
 
 def _lock_open_group(db: Session, group_id: int) -> Group:
@@ -116,15 +126,24 @@ def create_expense(
     refresh_debt_state(db, group)
     db.commit()
     push_live(db, group.id, "expense_added")
-    return expense_view(expense, user_names(db, [m for m in members]))
+    return expense_view(expense, involved_names(db, group.id, [expense]))
 
 
 @router.get("/groups/{group_id}/expenses")
-def list_expenses(group: Group = Depends(member_group), db: Session = Depends(get_db)):
+def list_expenses(
+    group: Group = Depends(member_group),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
     rows = db.scalars(
-        select(Expense).where(Expense.group_id == group.id, Expense.deleted.is_(False)).order_by(Expense.spent_on.desc(), Expense.id.desc())
+        select(Expense)
+        .where(Expense.group_id == group.id, Expense.deleted.is_(False))
+        .order_by(Expense.spent_on.desc(), Expense.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
-    names = user_names(db, member_ids(db, group.id))
+    names = involved_names(db, group.id, list(rows))
     return [expense_view(e, names) for e in rows]
 
 
@@ -152,10 +171,14 @@ def edit_expense(
     group = _lock_open_group(db, group.id)
     expense = _get_expense(db, group, expense_id)
     _may_change(user, expense)
+    if data.version is not None and data.version != expense.version:
+        raise HTTPException(409, "This expense was changed by someone else in the meantime: reload it and try again")
     members = set(member_ids(db, group.id))
-    if data.payer_id not in members:
+    # a person who took part in THIS expense and has since left may stay in it; nobody new may be added from outside
+    allowed = members | {s.user_id for s in expense.shares} | {expense.payer_id}
+    if data.payer_id not in allowed:
         raise HTTPException(422, "The payer must be a member of the group")
-    shares, weights = _compute_shares(data, members)
+    shares, weights = _compute_shares(data, allowed)
     touched = {s.user_id for s in expense.shares} | {expense.payer_id}
     expense.payer_id = data.payer_id
     expense.amount = data.amount_minor
@@ -165,6 +188,7 @@ def edit_expense(
     expense.comment = data.comment
     expense.split_type = data.split.type
     expense.updated_at = now_utc()
+    expense.version += 1
     expense.shares.clear()
     db.flush()
     expense.shares.extend(ExpenseShare(user_id=uid, amount=a, weight=weights.get(uid)) for uid, a in shares.items())
@@ -184,7 +208,7 @@ def edit_expense(
         log_activity(db, group.id, user.id, "settlement_overpaid", {"expense_id": expense.id, "people": warnings})
     db.commit()
     push_live(db, group.id, "expense_edited")
-    return {**expense_view(expense, user_names(db, list(members))), "warnings": warnings}
+    return {**expense_view(expense, involved_names(db, group.id, [expense])), "warnings": warnings}
 
 
 @router.delete("/groups/{group_id}/expenses/{expense_id}")
@@ -196,6 +220,9 @@ def delete_expense(
     _may_change(user, expense)
     expense.deleted = True
     expense.updated_at = now_utc()
+    orphan = expense.receipt_path
+    expense.receipt_path = None
+    expense.receipt_name = None
     label = expense.title or expense.category
     log_activity(db, group.id, user.id, "expense_deleted", {"expense_id": expense.id, "title": label, "amount_minor": expense.amount})
     _notify_participants(
@@ -207,8 +234,17 @@ def delete_expense(
     if warnings:
         log_activity(db, group.id, user.id, "settlement_overpaid", {"expense_id": expense.id, "people": warnings})
     db.commit()
+    if orphan:
+        _remove_file(orphan)
     push_live(db, group.id, "expense_deleted")
     return {"ok": True, "warnings": warnings}
+
+
+def _remove_file(name: str) -> None:
+    try:
+        os.remove(os.path.join(config.UPLOAD_DIR, os.path.basename(name)))
+    except OSError:
+        pass
 
 
 def _sniff_receipt(head: bytes) -> tuple[str, str] | None:
@@ -259,10 +295,7 @@ def upload_receipt(  # plain def on purpose: blocking file/DB work runs in the t
         os.remove(path)  # no orphan file if the transaction fails
         raise
     if old:
-        try:
-            os.remove(os.path.join(config.UPLOAD_DIR, os.path.basename(old)))
-        except OSError:
-            pass
+        _remove_file(old)
     push_live(db, group.id, "receipt_attached")
     return {"ok": True, "receipt_name": expense.receipt_name}
 

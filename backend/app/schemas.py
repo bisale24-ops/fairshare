@@ -80,8 +80,18 @@ class ExpenseIn(BaseModel):
     spent_on: date
     comment: str = Field(default="", max_length=2000)
     split: SplitIn
+    version: int | None = Field(default=None, ge=1)  # on edit: the version the client last saw
 
 
 class SettlementIn(BaseModel):
-    to_user: int = Field(ge=1, le=MAX_USER_ID)
+    """Record a payment. Give `to_user` if YOU paid them, or `from_user` if THEY paid you; the other side confirms."""
+
+    to_user: int | None = Field(default=None, ge=1, le=MAX_USER_ID)
+    from_user: int | None = Field(default=None, ge=1, le=MAX_USER_ID)
     amount_minor: int = Field(gt=0, le=10**12)
+
+    @model_validator(mode="after")
+    def _one_direction(self):
+        if (self.to_user is None) == (self.from_user is None):
+            raise ValueError("give exactly one of to_user (I paid) or from_user (I was paid)")
+        return self
