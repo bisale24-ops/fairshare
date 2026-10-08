@@ -89,8 +89,7 @@ Known gaps, not hidden:
   the debt. The numbers stay correct; the UI does not warn about it.
 - Any member can close or reopen a group (the case does not say who may).
 - The UI is Russian only. No frontend component tests, only the money helpers and error formatting.
-- Settlement confirmation is not offered for already-closed groups' new payments beyond what the API allows; payments
-  after closing are still accepted so people can settle up.
+- Payments are still accepted after a group is closed, so people can settle up; only expenses are blocked.
 
 ## Next steps (what I would do next)
 

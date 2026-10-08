@@ -18,13 +18,18 @@ services:
       BASE_URL: http://localhost:8080
       REMINDER_INTERVAL_SECONDS: "60"
     volumes: [uploads:/data/uploads]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 3s
+      retries: 30
     depends_on:
       db: { condition: service_healthy }
 
   web:
     build: ./frontend
     ports: ["8080:80"]
-    depends_on: [backend]
+    depends_on:
+      backend: { condition: service_healthy }
 
 volumes:
   pgdata:
