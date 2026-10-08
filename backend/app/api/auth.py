@@ -22,8 +22,16 @@ _failures: dict[str, deque[float]] = defaultdict(deque)
 _lock = threading.Lock()
 
 
+def client_ip(request: Request) -> str:
+    if config.TRUST_PROXY:
+        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+    return request.client.host if request.client else "?"
+
+
 def _throttle_key(request: Request, email: str) -> str:
-    return f"{request.client.host if request.client else '?'}|{email}"
+    return f"{client_ip(request)}|{email}"
 
 
 def _check_throttle(key: str) -> None:

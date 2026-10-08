@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import events
+from .. import config, events
 from ..db import get_db
 from ..deps import current_user, stream_user
 from ..models import Notification, Outbox, User
@@ -37,7 +37,9 @@ def mark_read(user: User = Depends(current_user), db: Session = Depends(get_db))
 
 @router.get("/me/outbox")
 def my_outbox(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """E-mail is stubbed: this shows the messages that were 'sent' to your address."""
+    """E-mail is stubbed: this shows the messages that were 'sent' to your address (development aid, see config.DEV_MAILBOX)."""
+    if not config.DEV_MAILBOX:
+        raise HTTPException(404, "Not found")
     rows = db.scalars(select(Outbox).where(Outbox.to_email == user.email).order_by(Outbox.id.desc()).limit(50))
     return [{"id": r.id, "subject": r.subject, "body": r.body, "kind": r.kind, "created_at": r.created_at} for r in rows]
 

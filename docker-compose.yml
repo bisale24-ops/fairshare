@@ -17,6 +17,8 @@ services:
       DATABASE_URL: postgresql+psycopg://fairshare:fairshare@db:5432/fairshare
       BASE_URL: http://localhost:8080
       REMINDER_INTERVAL_SECONDS: "60"
+      TRUST_PROXY: "1"   # the only way in is the bundled nginx, which sets X-Forwarded-For itself
+      DEV_MAILBOX: "1"   # e-mail is a stub; set to 0 once a real transport is plugged in
     volumes: [uploads:/data/uploads]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
