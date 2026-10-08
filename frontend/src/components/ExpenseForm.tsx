@@ -16,7 +16,10 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
   const [date, setDate] = useState(expense?.spent_on ?? new Date().toISOString().slice(0, 10));
   const [comment, setComment] = useState(expense?.comment ?? "");
   const [type, setType] = useState<"equal" | "shares" | "exact">(expense?.split_type ?? "equal");
-  const [picked, setPicked] = useState<Set<number>>(new Set(expense ? expense.shares.map((s) => s.user_id) : ids));
+  // Until the person ticks or unticks someone themselves, "everyone in the group" follows the group: somebody who joins
+  // while this form is open must not be silently left out of the split.
+  const [chosen, setChosen] = useState<Set<number> | null>(expense ? new Set(expense.shares.map((s) => s.user_id)) : null);
+  const picked = chosen ?? new Set(ids);
   const [weights, setWeights] = useState<Record<number, string>>(
     Object.fromEntries(ids.map((i) => [i, String(expense?.shares.find((s) => s.user_id === i)?.weight ?? 1)])),
   );
@@ -27,6 +30,8 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
   // Set once the expense is saved. If the receipt upload then fails, pressing the button again edits this expense
   // instead of creating a second one (which would count the money twice).
   const [savedId, setSavedId] = useState<number | null>(null);
+  // One key per form: every retry of THIS submission carries it, so a lost answer can never create the expense twice.
+  const [attemptKey] = useState(() => crypto.randomUUID());
   // Echoed back on every edit: if someone else changed the expense meanwhile the server answers 409 instead of overwriting them.
   const [version, setVersion] = useState<number | undefined>(expense?.version);
   const [error, setError] = useState("");
@@ -69,7 +74,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
     try {
       const saved = await api.saveExpense(group.id, expense?.id ?? savedId, {
         payer_id: payer, amount_minor: total, title, category, spent_on: date, comment, split, version,
-      });
+      }, attemptKey);
       setSavedId(saved.id);
       setVersion(saved.version);
       if (file) {
@@ -92,7 +97,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
   const toggle = (i: number) => {
     const next = new Set(picked);
     next.has(i) ? next.delete(i) : next.add(i);
-    setPicked(next);
+    setChosen(next);
   };
 
   return (

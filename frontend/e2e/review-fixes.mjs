@@ -63,6 +63,8 @@ try {
   await bob.page.getByText("Расход сохранён, но чек не загрузился").waitFor({ timeout: 5000 });
   await bob.page.getByRole("button", { name: "Сохранить" }).click();      // second press, no file now
   await bob.page.getByRole("button", { name: "+ Добавить расход" }).waitFor();
+  await bob.page.getByText("Дрова").first().waitFor({ timeout: 5000 });
+  await bob.page.waitForTimeout(700); // give a (wrong) duplicate time to show up before counting
   assert.equal(await bob.page.getByText("Дрова").count(), 1, "the expense must exist exactly once");
   await balanceIs(bob.page, "15,00\u00a0USD"); // counted once: Bob paid 30.00 and is owed half
 

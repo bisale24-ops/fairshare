@@ -41,6 +41,9 @@ export function setToken(t: string | null) {
   else sessionStorage.removeItem("token");
 }
 
+export const REQUEST_TIMEOUT_MS = 20_000;
+export const REQUEST_TIMEOUT_UPLOAD_MS = 60_000;
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -56,11 +59,24 @@ export function errorText(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-async function call<T>(method: string, path: string, body?: unknown, form?: FormData): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, form?: FormData, idempotencyKey?: string): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(`/api${path}`, { method, headers, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
+  // Same key on every retry of the same action: if the server already did it, it answers with the original instead of doing it twice.
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  // Never let the person stare at a spinner: give up after a while (uploads get longer) and say so.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), form ? REQUEST_TIMEOUT_UPLOAD_MS : REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, { method, headers, signal: controller.signal, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
+  } catch {
+    throw new ApiError(0, MESSAGES.network_error(undefined)); // the browser only says "Failed to fetch" / "aborted"
+  } finally {
+    clearTimeout(timer);
+  }
+  if (res.status === 502 || res.status === 503 || res.status === 504) throw new ApiError(res.status, MESSAGES.network_error(undefined)); // proxy up, API down
   if (res.status === 401 && token) {
     setToken(null);
     window.dispatchEvent(new Event("auth-expired"));  // App returns to the login screen instead of showing raw errors
@@ -90,8 +106,10 @@ export const api = {
   joinInfo: (t: string) => call<{ name: string; currency: string; closed: boolean }>("GET", `/join/${t}`),
   join: (t: string) => call<Group>("POST", `/join/${t}`),
   expenses: (id: number, limit = 50) => call<Expense[]>("GET", `/groups/${id}/expenses?limit=${limit}`),
-  saveExpense: (gid: number, eid: number | null, body: unknown) =>
-    eid ? call<Expense & { warnings: Overpaid[] }>("PUT", `/groups/${gid}/expenses/${eid}`, body) : call<Expense & { warnings?: Overpaid[] }>("POST", `/groups/${gid}/expenses`, body),
+  saveExpense: (gid: number, eid: number | null, body: unknown, idempotencyKey?: string) =>
+    eid
+      ? call<Expense & { warnings: Overpaid[] }>("PUT", `/groups/${gid}/expenses/${eid}`, body)
+      : call<Expense & { warnings?: Overpaid[] }>("POST", `/groups/${gid}/expenses`, body, undefined, idempotencyKey),
   deleteExpense: (gid: number, eid: number) => call<{ ok: boolean; warnings: Overpaid[] }>("DELETE", `/groups/${gid}/expenses/${eid}`),
   uploadReceipt: (gid: number, eid: number, file: File) => {
     const f = new FormData();
@@ -101,8 +119,8 @@ export const api = {
   receiptUrl: (gid: number, eid: number) => `/api/groups/${gid}/expenses/${eid}/receipt`,
   settlements: (id: number) => call<Settlement[]>("GET", `/groups/${id}/settlements`),
   /** direction "paid": I paid `other`; "received": `other` paid me (they confirm). */
-  settle: (gid: number, other: number, amount_minor: number, direction: "paid" | "received" = "paid") =>
-    call<Settlement>("POST", `/groups/${gid}/settlements`, direction === "paid" ? { to_user: other, amount_minor } : { from_user: other, amount_minor }),
+  settle: (gid: number, other: number, amount_minor: number, direction: "paid" | "received" = "paid", idempotencyKey?: string) =>
+    call<Settlement>("POST", `/groups/${gid}/settlements`, direction === "paid" ? { to_user: other, amount_minor } : { from_user: other, amount_minor }, undefined, idempotencyKey),
   confirm: (sid: number) => call<Settlement>("POST", `/settlements/${sid}/confirm`),
   reject: (sid: number) => call<Settlement>("POST", `/settlements/${sid}/reject`),
   activity: (id: number) => call<Activity[]>("GET", `/groups/${id}/activity`),
@@ -119,16 +137,41 @@ export const api = {
   outbox: () => call<{ id: number; subject: string; body: string; created_at: string }[]>("GET", "/me/outbox"),
 };
 
-/** Live updates: the server pushes {group_id, kind}; screens refetch on every event. */
+/**
+ * Live updates: the server pushes {group_id, kind}; screens refetch on every event.
+ * EventSource reconnects by itself after a dropped connection, but NOT after an HTTP error: while the API restarts the proxy
+ * answers 502, the browser gives up for good, and live updates would silently stop. So on a closed stream we ask the server who
+ * we are: 401 means the session is over (go to login); anything else means "server not back yet", try again with a growing delay.
+ */
 export function openStream(onEvent: (e: { type: string; group_id?: number; kind?: string }) => void): () => void {
   if (!token) return () => {};
-  const es = new EventSource(`/api/stream?access_token=${encodeURIComponent(token)}`);
-  es.onmessage = (m) => {
-    try { onEvent(JSON.parse(m.data)); } catch { /* ignore */ }
+  let es: EventSource | null = null;
+  let closed = false;
+  let delay = 1000;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const connect = () => {
+    if (closed || !token) return;
+    es = new EventSource(`/api/stream?access_token=${encodeURIComponent(token)}`);
+    es.onopen = () => { delay = 1000; };
+    es.onmessage = (m) => {
+      try { onEvent(JSON.parse(m.data)); } catch { /* ignore */ }
+    };
+    es.onerror = async () => {
+      if (closed || !es || es.readyState !== EventSource.CLOSED) return; // CONNECTING: the browser is already retrying
+      es.close();
+      try {
+        const r = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+        if (r.status === 401) {
+          setToken(null);
+          window.dispatchEvent(new Event("auth-expired"));
+          return;
+        }
+      } catch { /* server unreachable: same as not back yet */ }
+      timer = setTimeout(connect, delay);
+      delay = Math.min(delay * 2, 15000);
+    };
   };
-  // The browser reconnects by itself, but a closed stream means the token was rejected: end the session.
-  es.onerror = () => {
-    if (es.readyState === EventSource.CLOSED) window.dispatchEvent(new Event("auth-expired"));
-  };
-  return () => es.close();
+  connect();
+  return () => { closed = true; clearTimeout(timer); es?.close(); };
 }

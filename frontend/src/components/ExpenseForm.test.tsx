@@ -101,4 +101,63 @@ describe("ExpenseForm", () => {
     await user.click(screen.getByRole("button", { name: "Добавить расход" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("кто-то другой");
   });
+
+  it("retries after a lost connection with the SAME key, so the server can answer with the original instead of making a copy", async () => {
+    vi.mocked(api.saveExpense)
+      .mockRejectedValueOnce(new Error("Нет связи с сервером"))
+      .mockResolvedValueOnce(saved);
+    const done = vi.fn();
+    const user = userEvent.setup();
+    render(<ExpenseForm group={group()} meId={1} onDone={done} />);
+    await fillAmount(user, "5");
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Нет связи с сервером");
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("5");   // what the person typed is still there
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+    await waitFor(() => expect(done).toHaveBeenCalled());
+    const calls = vi.mocked(api.saveExpense).mock.calls as any[][];
+    expect(calls).toHaveLength(2);
+    expect(calls[0][3]).toBeTruthy();
+    expect(calls[1][3]).toBe(calls[0][3]);                          // identical key on the retry
+    expect(calls[1][1]).toBeNull();                                 // still a create: the first one never got an answer
+  });
+
+  it("uses a fresh key for a fresh form", async () => {
+    vi.mocked(api.saveExpense).mockResolvedValue(saved);
+    const user = userEvent.setup();
+    const keys: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const { unmount } = render(<ExpenseForm group={group()} meId={1} onDone={vi.fn()} />);
+      await fillAmount(user, "5");
+      await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+      await waitFor(() => expect(api.saveExpense).toHaveBeenCalledTimes(i + 1));
+      keys.push((vi.mocked(api.saveExpense).mock.calls[i] as any[])[3]);
+      unmount();
+    }
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it("includes somebody who joins the group while the form is open, unless the person chose participants themselves", async () => {
+    vi.mocked(api.saveExpense).mockResolvedValue(saved);
+    const user = userEvent.setup();
+    const alone = { ...group(), members: [{ id: 1, name: "Алиса", balance_minor: 0 }] };
+    const { rerender } = render(<ExpenseForm group={alone} meId={1} onDone={vi.fn()} />);
+    await fillAmount(user, "10");
+    rerender(<ExpenseForm group={group()} meId={1} onDone={vi.fn()} />);   // Боб joined meanwhile
+    expect(screen.getByLabelText("Участвует: Боб")).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+    await waitFor(() => expect(api.saveExpense).toHaveBeenCalled());
+    expect((vi.mocked(api.saveExpense).mock.calls[0] as any[])[2].split.participants).toEqual([1, 2]);
+  });
+
+  it("keeps a manual choice even when the group changes", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ExpenseForm group={group()} meId={1} onDone={vi.fn()} />);
+    await user.click(screen.getByLabelText("Участвует: Боб"));          // Боб deliberately left out
+    const three = { ...group(), members: [...group().members, { id: 3, name: "Вика", balance_minor: 0 }] };
+    rerender(<ExpenseForm group={three} meId={1} onDone={vi.fn()} />);
+    expect(screen.getByLabelText("Участвует: Алиса")).toBeChecked();
+    expect(screen.getByLabelText("Участвует: Боб")).not.toBeChecked();
+    expect(screen.getByLabelText("Участвует: Вика")).not.toBeChecked();  // not ticked behind the person's back
+  });
 });

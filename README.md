@@ -27,9 +27,10 @@ cd frontend && npm install && npm run dev                                       
 ## Tests (the proof)
 
 ```bash
-cd backend && uv run pytest -q --cov=app          # 69 tests, 95 % of lines (needs the Postgres above)
-cd frontend && npm run coverage && npm run build  # 20 tests (components, hooks, money, errors), type-check, build
+cd backend && uv run pytest -q --cov=app          # 81 tests, ~95 % of lines (needs the Postgres above)
+cd frontend && npm run coverage && npm run build  # 31 tests (components, hooks, money, errors, reliability), type-check, build
 cd frontend && BASE_URL=http://localhost:8080 npm run e2e:all   # 4 browser scenarios, needs Google Chrome + the running stack
+cd frontend && BACKEND_CONTAINER=<api container> npm run e2e:restart   # kills the API container while two people work, then the process inside it
 cd backend && uv run python scripts/perf.py       # latency numbers on a busy group
 ```
 
@@ -60,6 +61,27 @@ the tests notice (DEVLOG): every behaviour mutant was caught except one equivale
 warning), `membership` (cash received recorded by the creditor, leaving with a Russian error while in debt, leaving when settled,
 deleting a group), `mobile` (375 px: no horizontal scroll on any screen). Screenshots: `docs/screenshots/`. Run 30 times in
 parallel without a failure after the flakiness was fixed (DEVLOG).
+
+## When the API process dies
+
+Tested for real, not assumed (`backend/tests/test_process_kill.py`, `test_lost_response.py`, `frontend/e2e/restart.mjs`):
+
+- **Killed in the middle of a write.** The test starts the API as its own OS process, stalls its transaction on a locked table
+  after other rows were already written, and sends `SIGKILL`. Postgres rolls everything back: no half-saved expense, no payment
+  confirmed without its feed entry, no group closed without its summary e-mails (three scenarios). A restart serves the retry.
+  Early-commit mutants of the code are caught by these tests.
+- **Committed, but the answer never arrived.** A TCP proxy swallows the response after the server finished. Without protection a
+  retry creates a second expense (the test shows this on purpose); with the `Idempotency-Key` that the web client sends for every
+  expense and payment, the retry returns the original. Keys are stored in the same transaction as the expense, are scoped to the
+  user, and are purged after a week.
+- **What the person sees.** In a real browser: while the API is down, a clear message in Russian (not "Failed to fetch"), the form
+  keeps what was typed, nobody is logged out; when it is back, pressing the button once more creates exactly one expense and the
+  other person's page, never reloaded, catches up by itself (the live stream reconnects with growing delays; only a 401 ends a
+  session). A killed container is tested with people in a browser; a process dying inside the container is tested separately
+  (`e2e/supervisor.mjs`): Docker's restart policy (`restart: unless-stopped`) brings it back by itself, healthy again in 1 to 5 s.
+- **Deployment details that make this work**, each pinned by a test: nginx re-resolves the API's address (otherwise it keeps the
+  old one after a restart) and gives up on a dead address in 3 s (not 60); requests time out in the browser after 20 s; the
+  image stops live streams within 5 s on shutdown.
 
 ## Performance (measured, `scripts/perf.py`)
 
@@ -145,8 +167,9 @@ Known gaps, not hidden:
   the totals are exact, the attribution to a person is a view of the plan.
 - Any member can close, reopen or change a group's settings (the case does not say who may).
 - The UI is Russian only. Payments are not tied to a payment method; there is no currency conversion (a group has one currency).
-- Not tested: killing the API container in the middle of a request (a crash between statements is covered at code level, a
-  dropped database connection is covered, the process dying is not).
+- A crash of the **database** server in the middle of a write is covered only by PostgreSQL's own guarantees (a dropped connection is
+  tested, a crashed database is not). Idempotency keys cover create-expense and create-payment; other actions (confirm, close,
+  leave) are naturally safe to repeat or answer with a clear conflict.
 - Compose passwords are development defaults; there is no TLS termination (put a proxy in front for real use).
 
 ## Next steps

@@ -163,7 +163,7 @@ async function openReceipt(gid: number, eid: number, ask: (m: string, o?: { info
 }
 
 function BalancesTab({ g, user }: { g: Group; user: User }) {
-  const [paying, setPaying] = useState<{ other: number; otherName: string; amount: string; direction: "paid" | "received" } | null>(null);
+  const [paying, setPaying] = useState<{ other: number; otherName: string; amount: string; direction: "paid" | "received"; key: string } | null>(null);
   const [error, setError] = useState("");
 
   async function pay() {
@@ -171,7 +171,7 @@ function BalancesTab({ g, user }: { g: Group; user: User }) {
     const minor = parseMoney(paying.amount, g.currency);
     if (!minor) return setError("Неверная сумма");
     try {
-      await api.settle(g.id, paying.other, minor, paying.direction);
+      await api.settle(g.id, paying.other, minor, paying.direction, paying.key);
       setPaying(null);
       setError("");
     } catch (e: any) {
@@ -200,10 +200,10 @@ function BalancesTab({ g, user }: { g: Group; user: User }) {
             <span className="spacer" />
             <span>{formatMoney(t.amount_minor, g.currency)}</span>
             {t.from_user === user.id && (
-              <button className="primary small-btn" onClick={() => setPaying({ other: t.to_user, otherName: t.to_name, amount: minorToInput(t.amount_minor, g.currency), direction: "paid" })}>Я заплатил(а)</button>
+              <button className="primary small-btn" onClick={() => setPaying({ other: t.to_user, otherName: t.to_name, amount: minorToInput(t.amount_minor, g.currency), direction: "paid", key: crypto.randomUUID() })}>Я заплатил(а)</button>
             )}
             {t.to_user === user.id && (
-              <button className="ghost small-btn" onClick={() => setPaying({ other: t.from_user, otherName: t.from_name, amount: minorToInput(t.amount_minor, g.currency), direction: "received" })}>Мне заплатили</button>
+              <button className="ghost small-btn" onClick={() => setPaying({ other: t.from_user, otherName: t.from_name, amount: minorToInput(t.amount_minor, g.currency), direction: "received", key: crypto.randomUUID() })}>Мне заплатили</button>
             )}
           </div>
         ))}

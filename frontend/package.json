@@ -9,7 +9,8 @@
     "test": "vitest run",
     "e2e": "node e2e/two-people.mjs",
     "e2e:all": "node e2e/two-people.mjs && node e2e/review-fixes.mjs && node e2e/membership.mjs && node e2e/mobile.mjs",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "e2e:restart": "node e2e/restart.mjs && node e2e/supervisor.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

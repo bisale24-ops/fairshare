@@ -4,6 +4,8 @@ import { formatMoney } from "./money";
 type Params = Record<string, any> | undefined;
 
 export const MESSAGES: Record<string, (p: Params) => string> = {
+  // not an API code: produced by the client itself when the server cannot be reached
+  network_error: () => "Нет связи с сервером. Ничего не потеряно: проверьте соединение и повторите, повтор не создаст дубль",
   // access
   not_authenticated: () => "Нужно войти в аккаунт",
   session_invalid: () => "Сессия недействительна или истекла, войдите снова",

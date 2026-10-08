@@ -13,6 +13,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped   # if the API process dies, Docker brings it back; clients reconnect on their own
     environment:
       DATABASE_URL: postgresql+psycopg://fairshare:fairshare@db:5432/fairshare
       BASE_URL: http://localhost:8080

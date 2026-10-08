@@ -45,6 +45,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           SHOTS_DIR=/tmp/shots npm run e2e:all
+          BACKEND_CONTAINER=$(docker compose ps -q backend) npm run e2e:restart   # kills the API twice, for real
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: e2e-screenshots, path: /tmp/shots }
