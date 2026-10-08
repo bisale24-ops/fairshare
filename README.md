@@ -30,6 +30,7 @@ cd frontend && npm install && npm run dev                                       
 cd backend && DATABASE_URL=postgresql+psycopg://fairshare:fairshare@localhost:5433/fairshare uv run pytest -q   # 24 tests
 cd frontend && npm test && npm run build                      # 5 unit tests + type-check + build
 cd frontend && BASE_URL=http://localhost:8080 npm run e2e      # two browsers, real UI (needs Google Chrome + the running stack)
+cd frontend && BASE_URL=http://localhost:8080 node e2e/mobile.mjs   # 375px phone: no horizontal scroll on any screen
 ```
 
 CI (`.github/workflows/ci.yml`) runs: backend tests against a Postgres service, frontend tests and build, and

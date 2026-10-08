@@ -100,6 +100,12 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line
 .note.unread { background: var(--blue-tint); }
 .badge { background: var(--coral); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 6px; margin-left: 4px; }
 @media (max-width: 560px) {
+  h1 { font-size: 21px; }
   .money.big { font-size: 18px; }
-  .topbar { flex-wrap: wrap; }
+  .container { padding: 14px 12px 60px; }
+  .topbar { flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+  .topbar button { padding: 5px 10px; font-size: 14px; }
+  .tabs { overflow: visible; gap: 0; }
+  .tabs button { flex: 1 1 0; padding: 8px 2px; font-size: 13px; min-width: 0; }
+  .popover { position: fixed; left: 12px; right: 12px; top: 56px; width: auto; }
 }
