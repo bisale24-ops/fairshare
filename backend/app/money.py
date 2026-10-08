@@ -11,6 +11,7 @@ extra cent. The shares always sum to the expense total exactly.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from itertools import combinations
 
 
@@ -85,6 +86,18 @@ OPTIMAL_LIMIT = 12  # the DP is O(3^n): 12 people is about 0.05 s, 14 was about 
 
 
 def minimal_transfers(balances: dict[int, int]) -> list[Transfer]:
+    """See _minimal_transfers; results are cached by the balances themselves, so repeated reads of an unchanged group are free."""
+    if sum(balances.values()) != 0:
+        raise SplitError("balances must sum to zero")
+    return list(_cached_minimal(tuple(sorted((u, b) for u, b in balances.items() if b != 0))))
+
+
+@lru_cache(maxsize=4096)
+def _cached_minimal(items: tuple[tuple[int, int], ...]) -> tuple[Transfer, ...]:
+    return tuple(_minimal_transfers(dict(items)))
+
+
+def _minimal_transfers(balances: dict[int, int]) -> list[Transfer]:
     """Fewest transfers that bring every balance to zero.
 
     balances: user id -> net balance (positive: is owed money, negative: owes).

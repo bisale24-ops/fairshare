@@ -58,8 +58,9 @@ def compute_balances(db: Session, group_id: int) -> dict[int, int]:
     return balances
 
 
-def plan(db: Session, group_id: int) -> list[Transfer]:
-    return minimal_transfers(compute_balances(db, group_id))
+def plan(db: Session, group_id: int, balances: dict[int, int] | None = None) -> list[Transfer]:
+    """Minimal transfers for the group. Pass `balances` if the caller already has them (saves a second pass over the rows)."""
+    return minimal_transfers(compute_balances(db, group_id) if balances is None else balances)
 
 
 def log_activity(db: Session, group_id: int, actor_id: int | None, kind: str, payload: dict) -> None:

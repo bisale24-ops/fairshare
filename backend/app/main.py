@@ -14,9 +14,9 @@ from .reminders import run_reminders
 log = logging.getLogger("fairshare")
 
 
-async def _reminder_loop() -> None:
+async def _reminder_loop(interval: float | None = None) -> None:
     while True:
-        await asyncio.sleep(config.REMINDER_INTERVAL_SECONDS)
+        await asyncio.sleep(config.REMINDER_INTERVAL_SECONDS if interval is None else interval)
         try:
             def work() -> int:
                 with SessionLocal() as db:
@@ -31,9 +31,9 @@ async def _reminder_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_reminder_loop())
+    app.state.reminder_task = asyncio.create_task(_reminder_loop())
     yield
-    task.cancel()
+    app.state.reminder_task.cancel()
 
 
 app = FastAPI(title="Fairshare", version="0.1.0", lifespan=lifespan)

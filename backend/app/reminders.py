@@ -15,7 +15,7 @@ def _remind_group(db: Session, group: Group, now: datetime) -> int:
     refresh_debt_state(db, group, now)
     db.flush()
     balances = compute_balances(db, group.id)
-    transfers = plan(db, group.id)
+    transfers = plan(db, group.id, balances)
     names = user_names(db, list(balances))
     sent = 0
     for state in db.scalars(select(DebtState).where(DebtState.group_id == group.id, DebtState.since.is_not(None))):

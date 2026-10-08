@@ -41,8 +41,8 @@ from ..security import new_token
 router = APIRouter(prefix="/api", tags=["groups"])
 
 
-def _transfers_view(db: Session, group: Group):
-    transfers = plan(db, group.id)
+def _transfers_view(db: Session, group: Group, balances: dict[int, int] | None = None):
+    transfers = plan(db, group.id, balances)
     names = user_names(db, [t.from_user for t in transfers] + [t.to_user for t in transfers])
     return [
         {
@@ -73,7 +73,7 @@ def group_view(db: Session, group: Group, me: User) -> dict:
             {"id": uid, "name": names[uid], "balance_minor": balances.get(uid, 0)} for uid in ids
         ],
         "my_balance_minor": balances.get(me.id, 0),
-        "transfers": _transfers_view(db, group),
+        "transfers": _transfers_view(db, group, balances),
     }
 
 
@@ -254,7 +254,7 @@ def _report(db: Session, group: Group) -> dict:
             }
             for uid in ids
         ],
-        "transfers": _transfers_view(db, group),
+        "transfers": _transfers_view(db, group, balances),
     }
 
 
@@ -315,11 +315,12 @@ def my_balances(user: User = Depends(current_user), db: Session = Depends(get_db
     ).all()
     per_currency: dict[str, dict] = {}
     for g in groups:
-        bal = compute_balances(db, g.id).get(user.id, 0)
+        balances = compute_balances(db, g.id)
+        bal = balances.get(user.id, 0)
         cur = per_currency.setdefault(g.currency, {"currency": g.currency, "net_minor": 0, "groups": [], "_people": defaultdict(int)})
         cur["net_minor"] += bal
         cur["groups"].append({"group_id": g.id, "name": g.name, "balance_minor": bal, "closed": g.closed})
-        for t in plan(db, g.id):
+        for t in plan(db, g.id, balances):
             if t.from_user == user.id:
                 cur["_people"][t.to_user] -= t.amount
             elif t.to_user == user.id:
