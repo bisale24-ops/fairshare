@@ -1,10 +1,11 @@
 /** Money helpers. The API speaks integer minor units (cents); never floats. */
 
+/** "12.34", "12,3", ".5", "1 234,50" -> minor units. Null if it is not a plain amount or exceeds the server cap (10^12 minor). */
 export function parseMoney(input: string): number | null {
-  const m = input.trim().match(/^(\d{1,12})(?:[.,](\d{1,2}))?$/);
-  if (!m) return null;
+  const m = input.replace(/[\s\u00a0]/g, "").match(/^(\d{0,10})(?:[.,](\d{1,2}))?$/);
+  if (!m || (m[1] === "" && m[2] === undefined)) return null;
   const cents = (m[2] ?? "").padEnd(2, "0");
-  return Number(m[1]) * 100 + Number(cents);
+  return Number(m[1] || "0") * 100 + Number(cents);
 }
 
 export function formatMoney(minor: number, currency: string): string {

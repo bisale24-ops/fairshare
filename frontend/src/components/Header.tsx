@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type User } from "../api";
 import { useResource } from "../hooks";
 
@@ -7,6 +7,11 @@ export function Header({ user, onLogout }: { user: User; onLogout: () => void })
   const [mailOpen, setMailOpen] = useState(false);
   const notes = useResource(() => api.notifications(), []);
   const mail = useResource(() => api.outbox(), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); setMailOpen(false); } };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
   const unread = (notes.data ?? []).filter((n) => !n.read).length;
 
   async function toggle() {
@@ -22,7 +27,7 @@ export function Header({ user, onLogout }: { user: User; onLogout: () => void })
       <a className="brand" href="#/">Fairshare</a>
       <div className="spacer" />
       <div className="menu">
-        <button className="ghost" onClick={() => setMailOpen(!mailOpen)} aria-label="Письма (заглушка)">✉ Письма</button>
+        <button className="ghost" onClick={() => setMailOpen(!mailOpen)} aria-label="Письма (заглушка)" aria-expanded={mailOpen}>✉ Письма</button>
         {mailOpen && (
           <div className="popover wide">
             <div className="muted small">Почта — заглушка: здесь письма, «отправленные» на ваш адрес.</div>
@@ -34,7 +39,7 @@ export function Header({ user, onLogout }: { user: User; onLogout: () => void })
         )}
       </div>
       <div className="menu">
-        <button className="ghost" onClick={toggle} aria-label="Уведомления">
+        <button className="ghost" onClick={toggle} aria-label="Уведомления" aria-expanded={open}>
           🔔{unread > 0 && <span className="badge" data-testid="unread">{unread}</span>}
         </button>
         {open && (

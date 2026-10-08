@@ -24,6 +24,9 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
     Object.fromEntries(ids.map((i) => [i, expense?.split_type === "exact" ? minorToInput(expense.shares.find((s) => s.user_id === i)?.amount_minor ?? 0) : ""])),
   );
   const [file, setFile] = useState<File | null>(null);
+  // Set once the expense is saved. If the receipt upload then fails, pressing the button again edits this expense
+  // instead of creating a second one (which would count the money twice).
+  const [savedId, setSavedId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -44,7 +47,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
     } else if (type === "shares") {
       const w: Record<number, number> = {};
       for (const i of picked) {
-        const n = Number(weights[i]);
+        const n = Number(weights[i] ?? "1");
         if (!Number.isInteger(n) || n < 1) return setError("Доли — целые числа от 1");
         w[i] = n;
       }
@@ -62,10 +65,19 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
     }
     setBusy(true);
     try {
-      const saved = await api.saveExpense(group.id, expense?.id ?? null, {
+      const saved = await api.saveExpense(group.id, expense?.id ?? savedId, {
         payer_id: payer, amount_minor: total, title, category, spent_on: date, comment, split,
       });
-      if (file) await api.uploadReceipt(group.id, saved.id, file);
+      setSavedId(saved.id);
+      if (file) {
+        try {
+          await api.uploadReceipt(group.id, saved.id, file);
+        } catch (err: any) {
+          setError(`Расход сохранён, но чек не загрузился: ${err.message}. Выберите другой файл или нажмите «Сохранить» без чека.`);
+          setFile(null);
+          return;
+        }
+      }
       onDone();
     } catch (err: any) {
       setError(err.message);
@@ -105,7 +117,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
         <legend>Как делим</legend>
         <div className="seg">
           {([["equal", "Поровну"], ["shares", "Долями"], ["exact", "Точными суммами"]] as const).map(([v, l]) => (
-            <button type="button" key={v} className={type === v ? "on" : ""} onClick={() => setType(v)}>{l}</button>
+            <button type="button" key={v} className={type === v ? "on" : ""} aria-pressed={type === v} onClick={() => setType(v)}>{l}</button>
           ))}
         </div>
         <div className="split">
@@ -115,10 +127,10 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
               <span>{m.name}</span>
               <span className="spacer" />
               {type === "shares" && picked.has(m.id) && (
-                <input className="narrow-input" inputMode="numeric" value={weights[m.id]} onChange={(e) => setWeights({ ...weights, [m.id]: e.target.value })} aria-label={`Доля: ${m.name}`} />
+                <input className="narrow-input" inputMode="numeric" value={weights[m.id] ?? "1"} onChange={(e) => setWeights({ ...weights, [m.id]: e.target.value })} aria-label={`Доля: ${m.name}`} />
               )}
               {type === "exact" && (
-                <input className="narrow-input" inputMode="decimal" placeholder="0.00" value={amounts[m.id]} onChange={(e) => setAmounts({ ...amounts, [m.id]: e.target.value })} aria-label={`Сумма: ${m.name}`} />
+                <input className="narrow-input" inputMode="decimal" placeholder="0.00" value={amounts[m.id] ?? ""} onChange={(e) => setAmounts({ ...amounts, [m.id]: e.target.value })} aria-label={`Сумма: ${m.name}`} />
               )}
             </div>
           ))}
@@ -130,7 +142,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
 
       {error && <div className="error" role="alert">{error}</div>}
       <div className="row">
-        <button className="primary" disabled={busy}>{expense ? "Сохранить" : "Добавить расход"}</button>
+        <button className="primary" disabled={busy}>{expense || savedId ? "Сохранить" : "Добавить расход"}</button>
         <button type="button" className="ghost" onClick={onDone}>Отмена</button>
       </div>
     </form>

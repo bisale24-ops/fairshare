@@ -27,9 +27,10 @@ cd frontend && npm install && npm run dev                                       
 ## Tests (the proof)
 
 ```bash
-cd backend && DATABASE_URL=postgresql+psycopg://fairshare:fairshare@localhost:5433/fairshare uv run pytest -q   # 24 tests
+cd backend && DATABASE_URL=postgresql+psycopg://fairshare:fairshare@localhost:5433/fairshare uv run pytest -q   # 44 tests
 cd frontend && npm test && npm run build                      # 5 unit tests + type-check + build
 cd frontend && BASE_URL=http://localhost:8080 npm run e2e      # two browsers, real UI (needs Google Chrome + the running stack)
+cd frontend && BASE_URL=http://localhost:8080 node e2e/review-fixes.mjs   # e-mail invite link joins; failed receipt never duplicates an expense
 cd frontend && BASE_URL=http://localhost:8080 node e2e/mobile.mjs   # 375px phone: no horizontal scroll on any screen
 ```
 
@@ -67,42 +68,67 @@ notice (see DEVLOG, 2026-10-09 01:00): two of three mutants were caught; the thi
   (`ledger.compute_balances`), so editing or deleting an old expense cannot leave stale numbers. Each expense adds `+amount`
   to the payer and subtracts shares that sum to `amount`, so group balances always sum to zero.
 - **Minimal transfers.** With `n` non-zero balances the fewest transfers is `n − k`, where `k` is the most disjoint zero-sum
-  subsets. That is NP-hard in general, so up to 14 people it is solved exactly (bitmask DP), beyond that by greedy matching
-  (at most `n − 1` transfers).
+  subsets. That is NP-hard in general, so up to 12 people with a non-zero balance it is solved exactly (bitmask DP, O(3^n),
+  about 0.05 s at 12), beyond that by greedy matching (at most `n − 1` transfers).
 - **Settlements.** The debtor records a payment (full or partial); only the receiver can confirm or reject it. The amount
-  cannot exceed what the payer owes or what the receiver is owed. Pending payments show to both but do not change balances.
+  cannot exceed what the payer owes or what the receiver is owed, and payments still waiting for confirmation between the
+  same two people count against that limit. Pending payments show to both but do not change balances.
+- **A closed group is frozen.** No expenses, no new or confirmed payments, no new members, no receipts: the summary e-mail
+  must stay true. A group cannot be closed while payments are pending. Reopen it to continue.
+- **Who may do what.** Any member can add expenses (also on behalf of someone else), invite, close and reopen. Only the
+  person who added an expense or paid for it can edit or delete it.
 - **Concurrency.** Creating, editing and deleting an expense, and closing the group, take a row lock on the group, so a
   closing group cannot race a new expense. Independent expenses never conflict.
 - **Reminders.** A member who has been continuously in debt longer than the group's term gets an e-mail with the amount and
   recipients (from the minimal plan), at most once per 7 days; paying clears the debt state, so no reminder follows.
-  A background loop in the API process runs every 60 s (`REMINDER_INTERVAL_SECONDS`).
+  A background loop in the API process runs every 60 s (`REMINDER_INTERVAL_SECONDS`). The weekly limit holds even if a
+  debt is paid and returns the next day, and closed time does not count towards the term (reopening restarts the clock).
+  Each group is processed under its row lock.
 - **Live updates** use Server-Sent Events (`/api/stream`): after each change the server tells every member's open clients,
   and screens refetch. The hub is in-process, so the API runs one worker. To scale out, replace `events.publish` with
   Postgres LISTEN/NOTIFY.
-- **Auth.** E-mail + password (scrypt), opaque random bearer tokens (SHA-256 hashed in the DB). The stream accepts the
-  token as `?access_token=` because `EventSource` cannot send headers.
-- **Receipts:** PNG/JPEG/WebP/PDF up to 5 MB, stored in a volume, served only to members.
+- **Auth.** E-mail + password (scrypt), opaque random bearer tokens (SHA-256 hashed in the DB), 30-day expiry, logout
+  revokes. Eight wrong passwords in five minutes from one address for one e-mail give 429. Only the live stream accepts the
+  token as `?access_token=` (`EventSource` cannot send headers); every other route ignores it. The stream uses its own
+  short DB session so open tabs do not exhaust the connection pool.
+- **Invites.** The group link is shared and can be rotated (the old one stops working). An e-mail invite carries its own
+  personal link, which keeps working after the shared link is rotated.
+- **Receipts:** PNG/JPEG/WebP/PDF up to 5 MB. The type is detected from the file's own bytes (the browser-declared type
+  is not trusted), stored in a volume, served to members only as an attachment with `nosniff`; replacing deletes the old file.
+- **Input bounds:** at most 200 participants per split, weights 1..1 000 000, ids in the 32-bit range, duplicates are a 422.
 
 ## Honest status
 
-Works and is tested: everything in the table above.
+Works and is tested: everything in the table above, plus the fixes from an independent read-only review (below).
+
+**Independent review.** Three read-only reviewers (business logic, security/concurrency, frontend) went through the repo;
+I confirmed each finding before fixing it, and each fix has a test that fails without it (tests in
+`backend/tests/test_review_*.py`, `frontend/e2e/review-fixes.mjs`; hand-made mutants in DEVLOG). Fixed: payments and joins
+on a closed group, unserialised join, e-mail invite links that opened nothing, token in any URL and no expiry, stream
+holding a pooled DB session, unbounded split input (DB-overflow 500), receipt type trusted from the client, reminder
+weekly cap lost on a paid debt, closed time counted as debt time, a failed receipt upload leading to a duplicate expense,
+stale data when switching groups, missed events after a dropped connection, session expiry handling.
 
 Known gaps, not hidden:
-- The browser e2e covers one happy path (create, join, add, pay, confirm, close); editing, deleting, receipts and reminders are covered at API level only.
-- Live updates need a single API worker; tokens never expire; no password reset; no rate limiting.
-- E-mail is a stub (outbox table). "Invite by e-mail" stores the invite and "sends" the group link; access is by the
-  group's link token, so an invite e-mail is not tied to one address.
+- The browser e2e covers happy paths (create, join, add, pay, confirm, close; e-mail invite; failed receipt); editing,
+  deleting and reminders in the browser are covered at API level only. One e2e run failed once without a captured reason
+  and passed 7 times in a row afterwards; CI will show whether it is flaky.
+- Live updates need a single API worker (in-process hub). No password reset, no e-mail verification (e-mail is a stub, so the
+  mailbox for an address is whoever registered it first). Registration reveals whether an e-mail exists (409).
+- Throttling is in memory, per process.
 - Currencies are assumed to have two decimal places (JPY and similar would need a per-currency exponent).
 - After an old expense is edited down, an earlier confirmed settlement can exceed the new debt and flip the direction of
-  the debt. The numbers stay correct; the UI does not warn about it.
-- Any member can close or reopen a group (the case does not say who may).
-- The UI is Russian only. No frontend component tests, only the money helpers and error formatting.
-- Payments are still accepted after a group is closed, so people can settle up; only expenses are blocked.
+  the debt. The numbers stay correct; the UI does not warn about it. (Planned next.)
+- "Who owes you" across all groups is derived from each group's minimal plan, so counterparties can change after an edit;
+  the totals are exact, the attribution to a person is a view of the plan.
+- Any member can close, reopen or change a group's settings (the case does not say who may).
+- The UI is Russian only. There are no frontend component tests, only the money helpers and error formatting.
+- Compose passwords are development defaults; there is no TLS termination (put a proxy in front for real use).
 
 ## Next steps (what I would do next)
 
-More e2e paths (edit/delete, receipts); LISTEN/NOTIFY hub and multiple workers; per-currency decimals; a warning when an edit
-over-settles a debt; token expiry and password reset; real SMTP transport behind the existing `send_email` seam.
+A warning when an edit over-settles a debt; more browser e2e paths (edit/delete, reminders); LISTEN/NOTIFY hub and multiple workers; per-currency decimals;
+password reset and e-mail verification; real SMTP transport behind the existing `send_email` seam.
 
 ## Made with
 

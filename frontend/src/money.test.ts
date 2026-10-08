@@ -9,6 +9,11 @@ describe("money", () => {
     expect(parseMoney("19.99")).toBe(1999);
     expect(parseMoney("1.005")).toBeNull();
     expect(parseMoney("abc")).toBeNull();
+    expect(parseMoney(".5")).toBe(50);
+    expect(parseMoney("1 234,50")).toBe(123450);
+    expect(parseMoney("1\u00a0234.5")).toBe(123450);
+    expect(parseMoney("")).toBeNull();
+    expect(parseMoney("99999999999")).toBeNull(); // 11 digits: above the 10^12 minor-unit cap
     expect(parseMoney("-5")).toBeNull();
   });
   it("formats and round-trips", () => {

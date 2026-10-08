@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, getToken, type Activity, type Expense, type Group, type Report, type Settlement, type User } from "../api";
 import { ExpenseForm } from "../components/ExpenseForm";
 import { Money } from "../components/Money";
@@ -27,8 +27,16 @@ export function GroupPage({ id, user }: { id: number; user: User }) {
   const g = group.data;
   const { last } = useLive();
 
-  if (group.error) return <div className="card error">{group.error}</div>;
-  if (!g) return <div className="muted">Загрузка…</div>;
+  if (!g) {
+    return group.error ? (
+      <div className="card" role="alert">
+        <div className="error">{group.error === "Group not found" ? "Группа не найдена или у вас нет к ней доступа." : group.error}</div>
+        <a href="#/">← К списку групп</a>
+      </div>
+    ) : (
+      <div className="muted">Загрузка…</div>
+    );
+  }
 
   return (
     <>
@@ -40,6 +48,7 @@ export function GroupPage({ id, user }: { id: number; user: User }) {
           <Money minor={g.my_balance_minor} currency={g.currency} big />
         </div>
       </div>
+      {group.error && <div className="error small" role="alert">Не удалось обновить данные: {group.error}. Показаны последние загруженные. <button className="link" onClick={group.reload}>Повторить</button></div>}
       {last?.group_id === id && <div className="live small" aria-live="polite">Обновлено в реальном времени: {liveLabel(last.kind)}</div>}
       <nav className="tabs" role="tablist">
         {TABS.map(([t, l]) => (
@@ -67,7 +76,7 @@ function ExpensesTab({ g, user }: { g: Group; user: User }) {
 
   return (
     <>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
       {!editing && !g.closed && <button className="primary" onClick={() => setEditing("new")}>+ Добавить расход</button>}
       {g.closed && <div className="card muted">Группа закрыта: новые расходы не добавляются. Её можно открыть обратно в настройках.</div>}
       {editing && (
@@ -91,7 +100,7 @@ function ExpensesTab({ g, user }: { g: Group; user: User }) {
               {e.shares.map((s) => <span key={s.user_id} className="chip">{s.name}: {formatMoney(s.amount_minor, g.currency)}</span>)}
             </div>
             <div className="row small">
-              {e.has_receipt && <a href="#" onClick={async (ev) => { ev.preventDefault(); await openReceipt(g.id, e.id); }}>📎 {e.receipt_name}</a>}
+              {e.has_receipt && <button className="link" onClick={() => openReceipt(g.id, e.id)}>📎 {e.receipt_name}</button>}
               <span className="spacer" />
               {!g.closed && <button className="link" onClick={() => setEditing(e)}>Изменить</button>}
               {!g.closed && <button className="link danger" onClick={() => remove(e)}>Удалить</button>}
@@ -104,9 +113,18 @@ function ExpensesTab({ g, user }: { g: Group; user: User }) {
 }
 
 async function openReceipt(gid: number, eid: number) {
-  const res = await fetch(api.receiptUrl(gid, eid), { headers: { Authorization: `Bearer ${getToken()}` } });
-  if (!res.ok) return alert("Не удалось открыть чек");
-  window.open(URL.createObjectURL(await res.blob()), "_blank");
+  const tab = window.open("", "_blank"); // opened inside the click, before any await, so popup blockers allow it
+  try {
+    const res = await fetch(api.receiptUrl(gid, eid), { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) throw new Error(String(res.status));
+    const url = URL.createObjectURL(await res.blob());
+    if (tab) tab.location.href = url;
+    else window.location.assign(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    tab?.close();
+    alert("Не удалось открыть чек");
+  }
 }
 
 function BalancesTab({ g, user }: { g: Group; user: User }) {
@@ -159,7 +177,7 @@ function BalancesTab({ g, user }: { g: Group; user: User }) {
               <button className="primary" onClick={pay}>Отправить на подтверждение</button>
               <button className="ghost" onClick={() => setPaying(null)}>Отмена</button>
             </div>
-            {error && <div className="error">{error}</div>}
+            {error && <div className="error" role="alert">{error}</div>}
           </div>
         )}
       </section>
@@ -178,7 +196,7 @@ function SettlementsTab({ g, user }: { g: Group; user: User }) {
   return (
     <section className="card">
       <h3>Погашения</h3>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
       {(list.data ?? []).length === 0 && <p className="muted">Платежей пока не было.</p>}
       {(list.data ?? []).map((s: Settlement) => (
         <div key={s.id} className="row">
@@ -241,10 +259,12 @@ function SettingsTab({ g, onChange }: { g: Group; onChange: () => void }) {
   const [msg, setMsg] = useState("");
   const [days, setDays] = useState(g.remind_after_days);
   const [report, setReport] = useState<Report | null>(null);
+  useEffect(() => setDays(g.remind_after_days), [g.remind_after_days]);  // a teammate changed it
+  useEffect(() => { if (!g.closed) setReport(null); }, [g.closed]);       // never show the closed-time report on an open group
   const link = `${location.origin}/#/join/${g.invite_token}`;
 
   async function run(fn: () => Promise<unknown>, ok: string) {
-    try { await fn(); setMsg(ok); onChange(); } catch (e: any) { setMsg(e.message); }
+    try { await fn(); setMsg(ok); onChange(); return true; } catch (e: any) { setMsg(e.message); return false; }
   }
 
   async function close() {
@@ -256,11 +276,13 @@ function SettingsTab({ g, onChange }: { g: Group; onChange: () => void }) {
     <>
       <section className="card">
         <h3>Пригласить</h3>
+        <div className="small muted">Ссылка ниже общая. Если она попала не туда, обновите её: старая перестанет работать.</div>
         <div className="row">
           <input readOnly value={link} aria-label="Ссылка-приглашение" />
-          <button className="ghost" onClick={() => navigator.clipboard?.writeText(link).then(() => setMsg("Ссылка скопирована"))}>Копировать</button>
+          <button className="ghost" onClick={() => run(() => api.rotateInviteLink(g.id), "Ссылка обновлена, старая больше не работает")}>Обновить</button>
+          <button className="ghost" onClick={() => navigator.clipboard?.writeText(link).then(() => setMsg("Ссылка скопирована"), () => setMsg("Не удалось скопировать: выделите ссылку и скопируйте вручную"))}>Копировать</button>
         </div>
-        <form className="row" onSubmit={(e) => { e.preventDefault(); run(() => api.invite(g.id, email), `Приглашение отправлено на ${email}`).then(() => setEmail("")); }}>
+        <form className="row" onSubmit={(e) => { e.preventDefault(); run(() => api.invite(g.id, email), `Приглашение отправлено на ${email}`).then((done) => { if (done) setEmail(""); }); }}>
           <input type="email" placeholder="friend@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <button className="primary">Пригласить по e-mail</button>
         </form>
@@ -284,7 +306,7 @@ function SettingsTab({ g, onChange }: { g: Group; onChange: () => void }) {
         )}
         <ReportView g={g} report={report} />
       </section>
-      {msg && <div className="live small" aria-live="polite">{msg}</div>}
+      {msg && <div className="live small" role="status">{msg}</div>}
     </>
   );
 }

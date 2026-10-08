@@ -63,6 +63,10 @@ async function call<T>(method: string, path: string, body?: unknown, form?: Form
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetch(`/api${path}`, { method, headers, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
+  if (res.status === 401 && token) {
+    setToken(null);
+    window.dispatchEvent(new Event("auth-expired"));  // App returns to the login screen instead of showing raw errors
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -78,11 +82,13 @@ export const api = {
   register: (email: string, name: string, password: string) => call<{ token: string; user: User }>("POST", "/auth/register", { email, name, password }),
   login: (email: string, password: string) => call<{ token: string; user: User }>("POST", "/auth/login", { email, password }),
   me: () => call<User>("GET", "/auth/me"),
+  logout: () => call("POST", "/auth/logout"),
   groups: () => call<GroupRow[]>("GET", "/groups"),
   createGroup: (name: string, currency: string, remind_after_days: number) => call<Group>("POST", "/groups", { name, currency, remind_after_days }),
   group: (id: number) => call<Group>("GET", `/groups/${id}`),
   patchGroup: (id: number, data: { name?: string; remind_after_days?: number }) => call<Group>("PATCH", `/groups/${id}`, data),
   invite: (id: number, email: string) => call<{ link: string }>("POST", `/groups/${id}/invites`, { email }),
+  rotateInviteLink: (id: number) => call<Group>("POST", `/groups/${id}/invite-link/rotate`),
   joinInfo: (t: string) => call<{ name: string; currency: string; closed: boolean }>("GET", `/join/${t}`),
   join: (t: string) => call<Group>("POST", `/join/${t}`),
   expenses: (id: number) => call<Expense[]>("GET", `/groups/${id}/expenses`),
@@ -115,6 +121,10 @@ export function openStream(onEvent: (e: { type: string; group_id?: number; kind?
   const es = new EventSource(`/api/stream?access_token=${encodeURIComponent(token)}`);
   es.onmessage = (m) => {
     try { onEvent(JSON.parse(m.data)); } catch { /* ignore */ }
+  };
+  // The browser reconnects by itself, but a closed stream means the token was rejected: end the session.
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED) window.dispatchEvent(new Event("auth-expired"));
   };
   return () => es.close();
 }
