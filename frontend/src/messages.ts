@@ -59,6 +59,9 @@ export const MESSAGES: Record<string, (p: Params) => string> = {
   pending_cover_debt: () => "Уже отправленные платежи покрывают весь долг",
   amount_exceeds_limit: (p) =>
     `Сумма больше, чем можно закрыть между вами сейчас (максимум ${p?.max_minor != null ? formatMoney(p.max_minor, p.currency ?? "USD") : "—"})`,
+  // retries
+  idempotency_key_invalid: () => "Служебная ошибка: неверный ключ повтора запроса",
+  idempotency_key_reused: () => "Служебная ошибка: этот ключ повтора уже использован для другого действия",
   // notifications
   notification_not_found: () => "Уведомление не найдено",
 };

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from . import config
 from .ledger import compute_balances, fmt, notify, plan, push_live, refresh_debt_state, user_names
 from .mail import send_email
-from .models import DebtState, Group, User, now_utc
+from .models import DebtState, Group, IdempotencyKey, User, now_utc
 
 
 def _remind_group(db: Session, group: Group, now: datetime) -> int:
@@ -48,6 +48,8 @@ def run_reminders(db: Session, now: datetime | None = None) -> int:
     holds), so a payment confirmed at that moment, or a second runner, cannot produce a reminder for someone who just paid.
     """
     now = now or now_utc()
+    db.execute(delete(IdempotencyKey).where(IdempotencyKey.created_at < now - timedelta(days=7)))  # a retry never comes a week later
+    db.commit()
     total = 0
     ids = list(db.scalars(select(Group.id).where(Group.closed.is_(False))))
     for gid in ids:

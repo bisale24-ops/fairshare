@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..errors import ApiError
+from ..idempotency import already_done, idempotency_key, remember
 from ..db import get_db
 from ..deps import current_user, member_group
 from ..ledger import fmt, log_activity, member_ids, notify, overpaid, push_live, refresh_debt_state, user_names
@@ -94,9 +95,18 @@ def _notify_participants(db: Session, group: Group, actor: User, user_ids: set[i
 
 @router.post("/groups/{group_id}/expenses", status_code=201)
 def create_expense(
-    data: ExpenseIn, group: Group = Depends(member_group), user: User = Depends(current_user), db: Session = Depends(get_db)
+    data: ExpenseIn,
+    group: Group = Depends(member_group),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    key: str | None = Depends(idempotency_key),
 ):
     group = _lock_open_group(db, group.id)
+    done = already_done(db, user.id, key, "expense")
+    if done is not None:  # a retry of a request that already went through: hand back the same expense, create nothing
+        original = db.get(Expense, done)
+        if original is not None and not original.deleted:
+            return expense_view(original, involved_names(db, group.id, [original]))
     members = set(member_ids(db, group.id))
     if data.payer_id not in members:
         raise ApiError(422, "payer_not_member", "The payer must be a member of the group")
@@ -115,6 +125,7 @@ def create_expense(
     )
     db.add(expense)
     db.flush()
+    remember(db, user.id, key, "expense", expense.id)
     label = expense.title or expense.category
     log_activity(
         db, group.id, user.id, "expense_added",

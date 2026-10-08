@@ -158,6 +158,21 @@ class Outbox(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
+class IdempotencyKey(Base):
+    """Remembers which expense/payment a client-chosen key already created, in the SAME transaction as the thing itself.
+
+    If the API dies after committing but before the client got the answer, the client retries with the same key and gets
+    the original result back instead of a second copy. A key belongs to one user.
+    """
+
+    __tablename__ = "idempotency_keys"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    entity_id: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
 class DebtState(Base):
     """Per member and group: since when they have been continuously in debt (NULL = not in debt now).
 

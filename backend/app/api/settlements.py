@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
+from ..idempotency import already_done, idempotency_key, remember
 from ..db import get_db
 from ..deps import current_user, member_group
 from ..ledger import compute_balances, fmt, log_activity, member_ids, notify, push_live, refresh_debt_state, user_names
@@ -76,9 +77,18 @@ def _check_limits(db: Session, group: Group, from_user: int, to_user: int, amoun
 
 @router.post("/groups/{group_id}/settlements", status_code=201)
 def create_settlement(
-    data: SettlementIn, group: Group = Depends(member_group), user: User = Depends(current_user), db: Session = Depends(get_db)
+    data: SettlementIn,
+    group: Group = Depends(member_group),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    key: str | None = Depends(idempotency_key),
 ):
     group = _lock_group(db, group.id)
+    done = already_done(db, user.id, key, "settlement")
+    if done is not None:  # a retry: return the payment that was already recorded
+        original = db.get(Settlement, done)
+        if original is not None:
+            return settlement_view(original, user_names(db, [original.from_user, original.to_user]))
     _frozen(group)
     if data.to_user is not None:  # I paid them
         from_user, to_user, other = user.id, data.to_user, data.to_user
@@ -90,6 +100,7 @@ def create_settlement(
     s = Settlement(group_id=group.id, from_user=from_user, to_user=to_user, created_by=user.id, amount=data.amount_minor)
     db.add(s)
     db.flush()
+    remember(db, user.id, key, "settlement", s.id)
     log_activity(db, group.id, user.id, "settlement_proposed", {"settlement_id": s.id, "from_user": from_user, "to_user": to_user, "amount_minor": s.amount})
     text = (
         f"{user.name} says they paid you {fmt(s.amount, group.currency)} in {group.name}: please confirm"
