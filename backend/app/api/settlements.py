@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -32,8 +32,17 @@ def _lock_group(db: Session, group_id: int) -> Group:
     return db.execute(select(Group).where(Group.id == group_id).with_for_update()).scalar_one()
 
 
-def _check_limits(db: Session, group: Group, from_user: int, to_user: int, amount: int) -> None:
-    """A payment may not exceed what the debtor owes, nor what the receiver is owed."""
+def _frozen(group: Group) -> None:
+    if group.closed:
+        raise HTTPException(409, "The group is closed: reopen it to record or confirm payments")
+
+
+def _check_limits(db: Session, group: Group, from_user: int, to_user: int, amount: int, pending_excluded_id: int | None = None) -> None:
+    """A payment may not exceed what the debtor owes, nor what the receiver is owed.
+
+    Payments still waiting for confirmation between the same two people count against the limit,
+    so several pending payments cannot add up to more than the debt.
+    """
     balances = compute_balances(db, group.id)
     owes = -balances.get(from_user, 0)
     owed = balances.get(to_user, 0)
@@ -41,7 +50,18 @@ def _check_limits(db: Session, group: Group, from_user: int, to_user: int, amoun
         raise HTTPException(409, "You do not owe anything in this group")
     if owed <= 0:
         raise HTTPException(409, "The receiver is not owed anything in this group")
-    limit = min(owes, owed)
+    pending = db.scalar(
+        select(func.coalesce(func.sum(Settlement.amount), 0)).where(
+            Settlement.group_id == group.id,
+            Settlement.from_user == from_user,
+            Settlement.to_user == to_user,
+            Settlement.status == "pending",
+            Settlement.id != (pending_excluded_id or 0),
+        )
+    )
+    limit = min(owes, owed) - int(pending or 0)
+    if limit <= 0:
+        raise HTTPException(409, "Payments already waiting for confirmation cover the whole debt")
     if amount > limit:
         raise HTTPException(409, f"Amount is more than can be settled between you now (max {fmt(limit, group.currency)})")
 
@@ -51,6 +71,7 @@ def create_settlement(
     data: SettlementIn, group: Group = Depends(member_group), user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     group = _lock_group(db, group.id)
+    _frozen(group)
     if data.to_user == user.id or data.to_user not in set(member_ids(db, group.id)):
         raise HTTPException(422, "The receiver must be another member of the group")
     _check_limits(db, group, user.id, data.to_user, data.amount_minor)
@@ -79,12 +100,13 @@ def _resolve(settlement_id: int, user: User, db: Session, status: str) -> dict:
     db.refresh(s)
     if user.id not in member_ids(db, group.id):
         raise HTTPException(404, "Settlement not found")
+    _frozen(group)
     if s.to_user != user.id:
         raise HTTPException(403, "Only the receiver can confirm or reject a payment")
     if s.status != "pending":
         raise HTTPException(409, f"Settlement is already {s.status}")
     if status == "confirmed":
-        _check_limits(db, group, s.from_user, s.to_user, s.amount)
+        _check_limits(db, group, s.from_user, s.to_user, s.amount, pending_excluded_id=s.id)
     s.status = status
     s.resolved_at = now_utc()
     kind = "settlement_confirmed" if status == "confirmed" else "settlement_rejected"

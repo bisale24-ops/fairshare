@@ -30,7 +30,7 @@ def test_group_invite_by_link_and_by_email(client, api, db):
     r = client.post(f"/api/groups/{g['id']}/invites", json={"email": "friend@example.com"}, headers=a["h"])
     assert r.status_code == 201
     mail = db.scalar(select(Outbox).where(Outbox.to_email == "friend@example.com"))
-    assert mail and g["invite_token"] in mail.body
+    assert mail and r.json()["link"] in mail.body and "/#/join/" in mail.body
 
 
 def test_equal_split_keeps_every_cent_and_balances_sum_to_zero(api):

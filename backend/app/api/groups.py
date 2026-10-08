@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -135,12 +135,16 @@ def patch_group(
 def invite_by_email(
     data: InviteIn, group: Group = Depends(member_group), user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
+    group = db.execute(select(Group).where(Group.id == group.id).with_for_update()).scalar_one()
+    if group.closed:
+        raise HTTPException(409, "The group is closed")
     email = data.email.lower()
     invite = db.scalar(select(Invite).where(Invite.group_id == group.id, Invite.email == email))
     if not invite:
         invite = Invite(group_id=group.id, email=email, token=new_token())
         db.add(invite)
-    link = f"{config.BASE_URL}/join/{group.invite_token}"
+        db.flush()
+    link = f"{config.BASE_URL}/#/join/{invite.token}"
     send_email(
         db,
         email,
@@ -154,33 +158,50 @@ def invite_by_email(
     return {"email": email, "link": link}
 
 
-@router.get("/join/{token}")
-def join_info(token: str, db: Session = Depends(get_db)):
-    group = db.scalar(select(Group).where(Group.invite_token == token))
+def _group_by_token(db: Session, token: str, lock: bool = False) -> tuple[Group, Invite | None]:
+    """A join token is either the group's shared link or one person's own e-mail invite."""
+    invite = db.scalar(select(Invite).where(Invite.token == token))
+    q = select(Group).where(Group.id == invite.group_id) if invite else select(Group).where(Group.invite_token == token)
+    group = db.scalar(q.with_for_update() if lock else q)
     if not group:
         raise HTTPException(404, "Invite link is invalid")
+    return group, invite
+
+
+@router.get("/join/{token}")
+def join_info(token: str, db: Session = Depends(get_db)):
+    group, _ = _group_by_token(db, token)
     return {"group_id": group.id, "name": group.name, "currency": group.currency, "closed": group.closed}
 
 
 @router.post("/join/{token}")
 def join(token: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    group = db.scalar(select(Group).where(Group.invite_token == token))
-    if not group:
-        raise HTTPException(404, "Invite link is invalid")
-    if group.closed:
-        raise HTTPException(409, "The group is closed")
+    group, invite = _group_by_token(db, token, lock=True)  # same lock as close/expense: no join slips past a close
     if not db.get(Membership, (group.id, user.id)):
+        if group.closed:
+            raise HTTPException(409, "The group is closed")
         db.add(Membership(group_id=group.id, user_id=user.id))
+        if invite and not invite.accepted_at:
+            invite.accepted_at = now_utc()
         log_activity(db, group.id, user.id, "joined", {"name": user.name})
         db.commit()
         push_live(db, group.id, "joined")
     return group_view(db, group, user)
 
 
+@router.post("/groups/{group_id}/invite-link/rotate")
+def rotate_invite_link(group: Group = Depends(member_group), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Old shared link stops working; personal e-mail invites keep working."""
+    group.invite_token = new_token()
+    log_activity(db, group.id, user.id, "invite_link_rotated", {})
+    db.commit()
+    return group_view(db, group, user)
+
+
 @router.get("/groups/{group_id}/activity")
-def activity(group: Group = Depends(member_group), db: Session = Depends(get_db), limit: int = 100):
+def activity(group: Group = Depends(member_group), db: Session = Depends(get_db), limit: int = Query(default=100, ge=1, le=500)):
     rows = db.scalars(
-        select(Activity).where(Activity.group_id == group.id).order_by(Activity.id.desc()).limit(min(limit, 500))
+        select(Activity).where(Activity.group_id == group.id).order_by(Activity.id.desc()).limit(limit)
     ).all()
     names = user_names(db, [r.actor_id for r in rows if r.actor_id])
     return [
@@ -236,6 +257,8 @@ def close_group(group: Group = Depends(member_group), user: User = Depends(curre
     db.refresh(group)
     if group.closed:
         raise HTTPException(409, "The group is already closed")
+    if db.scalar(select(func.count()).select_from(Settlement).where(Settlement.group_id == group.id, Settlement.status == "pending")):
+        raise HTTPException(409, "Confirm or reject the pending payments first: the final summary must not change after it is sent")
     group.closed = True
     group.closed_at = now_utc()
     summary = _report(db, group)
