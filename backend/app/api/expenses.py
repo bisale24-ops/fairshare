@@ -128,6 +128,12 @@ def list_expenses(group: Group = Depends(member_group), db: Session = Depends(ge
     return [expense_view(e, names) for e in rows]
 
 
+def _may_change(user: User, expense: Expense) -> None:
+    """Only whoever recorded the expense or paid it may edit or delete it; other members can still read it."""
+    if user.id not in (expense.created_by, expense.payer_id):
+        raise HTTPException(403, "Only the person who added the expense or paid for it can change it")
+
+
 def _get_expense(db: Session, group: Group, expense_id: int) -> Expense:
     e = db.get(Expense, expense_id)
     if not e or e.group_id != group.id or e.deleted:
@@ -145,6 +151,7 @@ def edit_expense(
 ):
     group = _lock_open_group(db, group.id)
     expense = _get_expense(db, group, expense_id)
+    _may_change(user, expense)
     members = set(member_ids(db, group.id))
     if data.payer_id not in members:
         raise HTTPException(422, "The payer must be a member of the group")
@@ -183,6 +190,7 @@ def delete_expense(
 ):
     group = _lock_open_group(db, group.id)
     expense = _get_expense(db, group, expense_id)
+    _may_change(user, expense)
     expense.deleted = True
     expense.updated_at = now_utc()
     label = expense.title or expense.category

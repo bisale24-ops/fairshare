@@ -93,3 +93,17 @@ def test_activity_limit_is_validated(client, api):
     assert client.get(f"/api/groups/{g['id']}/activity?limit=-1", headers=a["h"]).status_code == 422
     assert client.get(f"/api/groups/{g['id']}/activity?limit=0", headers=a["h"]).status_code == 422
     assert client.get(f"/api/groups/{g['id']}/activity?limit=5", headers=a["h"]).status_code == 200
+
+
+def test_only_the_author_or_the_payer_may_edit_or_delete_an_expense(client, api):
+    a, b, c = api.user(), api.user(), api.user()
+    g = api.group(a, [b, c])
+    ids = [a["id"], b["id"], c["id"]]
+    e = api.expense(g, a, b, 900, api.equal(ids)).json()  # a recorded it, b paid
+    url = f"/api/groups/{g['id']}/expenses/{e['id']}"
+    body = {"payer_id": b["id"], "amount_minor": 600, "title": "x", "category": "food", "spent_on": "2026-10-01", "split": api.equal(ids)}
+    assert client.put(url, json=body, headers=c["h"]).status_code == 403  # a bystander
+    assert client.delete(url, headers=c["h"]).status_code == 403
+    assert client.put(url, json=body, headers=b["h"]).status_code == 200  # the payer
+    assert client.delete(url, headers=a["h"]).status_code == 200  # the author
+    assert api.balances(g, c) == {a["id"]: 0, b["id"]: 0, c["id"]: 0}
