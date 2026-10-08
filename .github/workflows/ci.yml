@@ -16,7 +16,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: Tests (real Postgres, through the Alembic migration)
         working-directory: backend
-        run: uv sync && uv run pytest -q
+        run: uv sync && uv run pytest -q --cov=app --cov-report=term
 
   frontend:
     runs-on: ubuntu-latest
@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - working-directory: frontend
-        run: npm ci --no-audit --no-fund && npm test && npm run build
+        run: npm ci --no-audit --no-fund && npm run coverage && npm run build
 
   compose-smoke:
     runs-on: ubuntu-latest
@@ -44,9 +44,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci --no-audit --no-fund
-          SHOTS_DIR=/tmp/shots npm run e2e
-          node e2e/review-fixes.mjs
-          SHOTS_DIR=/tmp/shots node e2e/mobile.mjs
+          SHOTS_DIR=/tmp/shots npm run e2e:all
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: e2e-screenshots, path: /tmp/shots }

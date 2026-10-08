@@ -3,7 +3,7 @@
 //  2. a failed receipt upload must not lead to the same expense being created twice.
 import { chromium } from "playwright-core";
 import assert from "node:assert/strict";
-import { uid } from "./util.mjs";
+import { balanceIs, uid } from "./util.mjs";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,8 +64,7 @@ try {
   await bob.page.getByRole("button", { name: "Сохранить" }).click();      // second press, no file now
   await bob.page.getByRole("button", { name: "+ Добавить расход" }).waitFor();
   assert.equal(await bob.page.getByText("Дрова").count(), 1, "the expense must exist exactly once");
-  const bal = await bob.page.locator(".row.head .money").innerText();
-  assert.equal(bal, "15,00 USD", "counted once: Bob paid 30.00 and owes half");
+  await balanceIs(bob.page, "15,00\u00a0USD"); // counted once: Bob paid 30.00 and is owed half
 
   // 3. Alice sees it live, once, and cannot change Bob's expense
   await alice.page.getByRole("tab", { name: "Расходы" }).click();

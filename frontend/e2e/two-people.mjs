@@ -2,7 +2,7 @@
 // Usage: BASE_URL=http://localhost:8080 node e2e/two-people.mjs   (uses the installed Google Chrome)
 import { chromium } from "playwright-core";
 import assert from "node:assert/strict";
-import { uid } from "./util.mjs";
+import { balanceIs, uid } from "./util.mjs";
 import { mkdirSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:8080";
@@ -26,7 +26,6 @@ async function register(p, url = BASE) {
   await p.page.getByLabel("Пароль").fill("e2e-pass-123");
   await p.page.getByRole("button", { name: "Создать аккаунт" }).click();
 }
-const balance = (p) => p.page.locator(".row.head .money");
 
 try {
   const alice = await person("Алиса", "alice");
@@ -55,8 +54,8 @@ try {
 
   // Alice's page was NOT reloaded: it must update by itself
   await alice.page.getByText("Такси").waitFor({ timeout: 5000 });
-  assert.equal(await balance(alice).innerText(), `−5,01${nbsp}USD`);
-  assert.equal(await balance(bob).innerText(), `5,01${nbsp}USD`);
+  await balanceIs(alice.page, `−5,01${nbsp}USD`);
+  await balanceIs(bob.page, `5,01${nbsp}USD`);
   assert.equal(await alice.page.getByTestId("unread").innerText(), "1");
   await alice.page.screenshot({ path: `${SHOTS}/01-alice-live-update.png` });
   await bob.page.screenshot({ path: `${SHOTS}/02-bob-added-expense.png` });
@@ -68,13 +67,13 @@ try {
   await alice.page.getByRole("button", { name: "Отправить на подтверждение" }).click();
   await bob.page.getByRole("tab", { name: "Погашения" }).click();
   await bob.page.locator(".tag.pending").waitFor({ timeout: 5000 }); // the status tag, not the live banner that says the same words
-  assert.equal(await balance(bob).innerText(), `5,01${nbsp}USD`); // pending: not counted
+  await balanceIs(bob.page, `5,01${nbsp}USD`); // pending: not counted
   await bob.page.screenshot({ path: `${SHOTS}/03-bob-confirm-payment.png` });
   await bob.page.getByRole("button", { name: "Подтвердить" }).click();
 
   await alice.page.getByText("3,01").first().waitFor({ timeout: 5000 });
-  assert.equal(await balance(alice).innerText(), `−3,01${nbsp}USD`);
-  assert.equal(await balance(bob).innerText(), `3,01${nbsp}USD`);
+  await balanceIs(alice.page, `−3,01${nbsp}USD`);
+  await balanceIs(bob.page, `3,01${nbsp}USD`);
   await alice.page.screenshot({ path: `${SHOTS}/04-alice-after-confirmation.png` });
 
   // Close the group: no new expenses, report is shown
