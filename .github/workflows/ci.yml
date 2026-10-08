@@ -1,0 +1,44 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: fairshare, POSTGRES_PASSWORD: fairshare, POSTGRES_DB: fairshare }
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fairshare" --health-interval 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Tests (real Postgres, through the Alembic migration)
+        working-directory: backend
+        run: uv sync && uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - working-directory: frontend
+        run: npm ci --no-audit --no-fund && npm test && npm run build
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bring the whole stack up exactly as a reviewer would
+        run: docker compose up -d --build --wait
+      - name: Smoke test through the public port
+        run: |
+          curl -fsS localhost:8080/api/health
+          TOKEN=$(curl -fsS -X POST localhost:8080/api/auth/register -H 'content-type: application/json' \
+            -d '{"email":"ci@example.com","name":"CI","password":"secret1"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+          curl -fsS -X POST localhost:8080/api/groups -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+            -d '{"name":"CI","currency":"USD"}' | grep -q '"name":"CI"'
+      - if: failure()
+        run: docker compose logs

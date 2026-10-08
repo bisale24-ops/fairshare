@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Activity, type Expense, type Group, type Report, type Settlement, type User } from "../api";
+import { api, getToken, type Activity, type Expense, type Group, type Report, type Settlement, type User } from "../api";
 import { ExpenseForm } from "../components/ExpenseForm";
 import { Money } from "../components/Money";
 import { useResource } from "../hooks";
@@ -97,7 +97,7 @@ function ExpensesTab({ g, user }: { g: Group; user: User }) {
 }
 
 async function openReceipt(gid: number, eid: number) {
-  const res = await fetch(api.receiptUrl(gid, eid), { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+  const res = await fetch(api.receiptUrl(gid, eid), { headers: { Authorization: `Bearer ${getToken()}` } });
   if (!res.ok) return alert("Не удалось открыть чек");
   window.open(URL.createObjectURL(await res.blob()), "_blank");
 }

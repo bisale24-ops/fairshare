@@ -28,16 +28,34 @@ export type GlobalBalance = {
   people: { user_id: number; name: string; amount_minor: number }[];
 };
 
-let token: string | null = localStorage.getItem("token");
+// sessionStorage on purpose: every browser tab is its own session, so two people can be tested side by side.
+let token: string | null = sessionStorage.getItem("token");
 export const getToken = () => token;
 export function setToken(t: string | null) {
   token = t;
-  if (t) localStorage.setItem("token", t);
-  else localStorage.removeItem("token");
+  if (t) sessionStorage.setItem("token", t);
+  else sessionStorage.removeItem("token");
 }
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
+}
+
+const FIELD_LABEL: Record<string, string> = { email: "E-mail", password: "Пароль", name: "Имя", amount_minor: "Сумма", currency: "Валюта" };
+
+/** FastAPI validation errors arrive as a list; show them as one readable line. */
+export function errorText(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => {
+        const field = FIELD_LABEL[String(d.loc?.[d.loc.length - 1])] ?? "";
+        const msg = String(d.msg ?? "").replace(/^Value error, /, "");
+        return field ? `${field}: ${msg}` : msg;
+      })
+      .join("; ");
+  }
+  return fallback;
 }
 
 async function call<T>(method: string, path: string, body?: unknown, form?: FormData): Promise<T> {
@@ -49,7 +67,7 @@ async function call<T>(method: string, path: string, body?: unknown, form?: Form
     let msg = res.statusText;
     try {
       const data = await res.json();
-      msg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      msg = errorText(data.detail, msg);
     } catch { /* keep status text */ }
     throw new ApiError(res.status, msg);
   }
