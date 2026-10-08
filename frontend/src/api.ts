@@ -30,6 +30,8 @@ export type GlobalBalance = {
 };
 
 // sessionStorage on purpose: every browser tab is its own session, so two people can be tested side by side.
+import { MESSAGES, validationText } from "./messages";
+
 let token: string | null = sessionStorage.getItem("token");
 export const getToken = () => token;
 export function setToken(t: string | null) {
@@ -42,19 +44,13 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-const FIELD_LABEL: Record<string, string> = { email: "E-mail", password: "Пароль", name: "Имя", amount_minor: "Сумма", currency: "Валюта" };
-
-/** FastAPI validation errors arrive as a list; show them as one readable line. */
+/** Turn an API error body into a sentence in the user's language: known codes use messages.ts, field errors use validationText. */
 export function errorText(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail
-      .map((d) => {
-        const field = FIELD_LABEL[String(d.loc?.[d.loc.length - 1])] ?? "";
-        const msg = String(d.msg ?? "").replace(/^Value error, /, "");
-        return field ? `${field}: ${msg}` : msg;
-      })
-      .join("; ");
+  if (Array.isArray(detail)) return validationText(detail);
+  if (detail && typeof detail === "object" && "code" in detail) {
+    const d = detail as { code: string; message?: string; params?: Record<string, any> };
+    return MESSAGES[d.code]?.(d.params) ?? d.message ?? fallback;
   }
   return fallback;
 }

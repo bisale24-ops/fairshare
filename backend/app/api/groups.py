@@ -9,6 +9,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .. import config, events
+from ..errors import ApiError
 from ..db import get_db
 from ..deps import current_user, member_group
 from ..ledger import (
@@ -140,7 +141,7 @@ def invite_by_email(
 ):
     group = db.execute(select(Group).where(Group.id == group.id).with_for_update()).scalar_one()
     if group.closed:
-        raise HTTPException(409, "The group is closed")
+        raise ApiError(409, "group_closed", "The group is closed")
     email = data.email.lower()
     invite = db.scalar(select(Invite).where(Invite.group_id == group.id, Invite.email == email))
     if not invite:
@@ -167,7 +168,7 @@ def _group_by_token(db: Session, token: str, lock: bool = False) -> tuple[Group,
     q = select(Group).where(Group.id == invite.group_id) if invite else select(Group).where(Group.invite_token == token)
     group = db.scalar(q.with_for_update() if lock else q)
     if not group:
-        raise HTTPException(404, "Invite link is invalid")
+        raise ApiError(404, "invite_invalid", "Invite link is invalid")
     return group, invite
 
 
@@ -182,7 +183,7 @@ def join(token: str, user: User = Depends(current_user), db: Session = Depends(g
     group, invite = _group_by_token(db, token, lock=True)  # same lock as close/expense: no join slips past a close
     if not db.get(Membership, (group.id, user.id)):
         if group.closed:
-            raise HTTPException(409, "The group is closed")
+            raise ApiError(409, "group_closed", "The group is closed")
         db.add(Membership(group_id=group.id, user_id=user.id))
         if invite and not invite.accepted_at:
             invite.accepted_at = now_utc()
@@ -268,9 +269,9 @@ def close_group(group: Group = Depends(member_group), user: User = Depends(curre
     db.execute(select(Group).where(Group.id == group.id).with_for_update())  # serialise with expense creation
     db.refresh(group)
     if group.closed:
-        raise HTTPException(409, "The group is already closed")
+        raise ApiError(409, "group_already_closed", "The group is already closed")
     if db.scalar(select(func.count()).select_from(Settlement).where(Settlement.group_id == group.id, Settlement.status == "pending")):
-        raise HTTPException(409, "Confirm or reject the pending payments first: the final summary must not change after it is sent")
+        raise ApiError(409, "pending_before_close", "Confirm or reject the pending payments first: the final summary must not change after it is sent")
     group.closed = True
     group.closed_at = now_utc()
     summary = _report(db, group)
@@ -297,7 +298,7 @@ def reopen_group(group: Group = Depends(member_group), user: User = Depends(curr
     db.execute(select(Group).where(Group.id == group.id).with_for_update())
     db.refresh(group)
     if not group.closed:
-        raise HTTPException(409, "The group is not closed")
+        raise ApiError(409, "group_not_closed", "The group is not closed")
     group.closed = False
     group.closed_at = None
     refresh_debt_state(db, group, restart=True)
@@ -339,22 +340,22 @@ def my_balances(user: User = Depends(current_user), db: Session = Depends(get_db
 def _may_leave(db: Session, group: Group, uid: int) -> None:
     """A member can only go once nothing depends on them: balance zero, no payment waiting for their answer."""
     if compute_balances(db, group.id).get(uid, 0) != 0:
-        raise HTTPException(409, "Settle up first: this person's balance in the group is not zero")
+        raise ApiError(409, "balance_not_zero", "Settle up first: this person's balance in the group is not zero")
     waiting = db.scalar(
         select(func.count()).select_from(Settlement).where(
             Settlement.group_id == group.id, Settlement.status == "pending", (Settlement.from_user == uid) | (Settlement.to_user == uid)
         )
     )
     if waiting:
-        raise HTTPException(409, "Confirm or reject the pending payments first")
+        raise ApiError(409, "pending_payments", "Confirm or reject the pending payments first")
 
 
 def _remove_member(db: Session, group: Group, uid: int, actor: User, kind: str) -> None:
     ids = member_ids(db, group.id)
     if uid not in ids:
-        raise HTTPException(404, "Not a member")
+        raise ApiError(404, "not_member", "Not a member")
     if len(ids) == 1:
-        raise HTTPException(409, "The last member cannot leave: delete the group instead")
+        raise ApiError(409, "last_member", "The last member cannot leave: delete the group instead")
     _may_leave(db, group, uid)
     db.delete(db.get(Membership, (group.id, uid)))
     db.execute(delete(DebtState).where(DebtState.group_id == group.id, DebtState.user_id == uid))
@@ -377,9 +378,9 @@ def leave_group(group: Group = Depends(member_group), user: User = Depends(curre
 def remove_member(user_id: int, group: Group = Depends(member_group), user: User = Depends(current_user), db: Session = Depends(get_db)):
     db.execute(select(Group).where(Group.id == group.id).with_for_update())
     if group.created_by != user.id:
-        raise HTTPException(403, "Only the person who created the group can remove members")
+        raise ApiError(403, "only_creator_remove", "Only the person who created the group can remove members")
     if user_id == user.id:
-        raise HTTPException(422, "Use 'leave' to leave the group yourself")
+        raise ApiError(422, "use_leave", "Use 'leave' to leave the group yourself")
     ids = member_ids(db, group.id)
     _remove_member(db, group, user_id, user, "removed")
     db.commit()
@@ -392,10 +393,10 @@ def delete_group(group: Group = Depends(member_group), user: User = Depends(curr
     """Creator only, and only for a closed group or one with no expenses yet. Everything in it, receipts included, goes."""
     db.execute(select(Group).where(Group.id == group.id).with_for_update())
     if group.created_by != user.id:
-        raise HTTPException(403, "Only the person who created the group can delete it")
+        raise ApiError(403, "only_creator_delete", "Only the person who created the group can delete it")
     has_expenses = db.scalar(select(func.count()).select_from(Expense).where(Expense.group_id == group.id))
     if not group.closed and has_expenses:
-        raise HTTPException(409, "Close the group first (or delete it while it has no expenses)")
+        raise ApiError(409, "close_before_delete", "Close the group first (or delete it while it has no expenses)")
     files = [r for r in db.scalars(select(Expense.receipt_path).where(Expense.group_id == group.id)) if r]
     ids = member_ids(db, group.id)
     db.delete(group)  # the database cascades to members, expenses, payments, feed, notifications, invites

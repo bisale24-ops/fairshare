@@ -17,7 +17,7 @@ def test_closed_group_rejects_new_and_pending_settlement_actions(client, api):
     a, b, g = _setup(api)
     assert client.post(f"/api/groups/{g['id']}/close", headers=a["h"]).status_code == 200
     r = client.post(f"/api/groups/{g['id']}/settlements", json={"to_user": a["id"], "amount_minor": 100}, headers=b["h"])
-    assert r.status_code == 409 and "closed" in r.json()["detail"]
+    assert r.status_code == 409 and "closed" in r.json()["detail"]["message"]
     assert api.balances(g, a) == {a["id"]: 500, b["id"]: -500}  # the e-mailed summary is final
 
 
@@ -25,7 +25,7 @@ def test_cannot_close_while_a_payment_is_pending(client, api):
     a, b, g = _setup(api)
     s = client.post(f"/api/groups/{g['id']}/settlements", json={"to_user": a["id"], "amount_minor": 100}, headers=b["h"]).json()
     r = client.post(f"/api/groups/{g['id']}/close", headers=a["h"])
-    assert r.status_code == 409 and "pending" in r.json()["detail"]
+    assert r.status_code == 409 and "pending" in r.json()["detail"]["message"]
     assert client.post(f"/api/settlements/{s['id']}/confirm", headers=a["h"]).status_code == 200
     assert client.post(f"/api/groups/{g['id']}/close", headers=a["h"]).status_code == 200
     # a payment confirmed before closing stays confirmed; nothing can change afterwards

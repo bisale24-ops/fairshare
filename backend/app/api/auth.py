@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import config
+from ..errors import ApiError
 from ..db import get_db
 from ..deps import current_user
 from ..models import AuthToken, User
@@ -41,7 +42,7 @@ def _check_throttle(key: str) -> None:
         while q and now - q[0] > config.LOGIN_WINDOW_SECONDS:
             q.popleft()
         if len(q) >= config.LOGIN_MAX_FAILURES:
-            raise HTTPException(429, "Too many failed attempts. Try again in a few minutes.")
+            raise ApiError(429, "too_many_attempts", "Too many failed attempts. Try again in a few minutes.")
 
 
 def _record_failure(key: str) -> None:
@@ -64,7 +65,7 @@ def register(data: RegisterIn, db: Session = Depends(get_db)):
         db.flush()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(409, "E-mail is already registered")
+        raise ApiError(409, "email_taken", "E-mail is already registered")
     return _session(db, user)
 
 
@@ -76,7 +77,7 @@ def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
     ok = verify_password(data.password, user.password_hash if user else _DUMMY_HASH)
     if not user or not ok:
         _record_failure(key)
-        raise HTTPException(401, "Wrong e-mail or password")
+        raise ApiError(401, "bad_credentials", "Wrong e-mail or password")
     return _session(db, user)
 
 

@@ -16,26 +16,30 @@ from itertools import combinations
 
 
 class SplitError(ValueError):
-    pass
+    """A split that cannot be computed. `code` is a stable id the web client translates (see app/errors.py)."""
+
+    def __init__(self, message: str, code: str = "split_invalid"):
+        super().__init__(message)
+        self.code = code
 
 
 def split_equal(total: int, user_ids: list[int]) -> dict[int, int]:
     if total < 0:
-        raise SplitError("total must be non-negative")
+        raise SplitError("total must be non-negative", "split_negative_total")
     if not user_ids:
-        raise SplitError("at least one participant is required")
+        raise SplitError("at least one participant is required", "split_need_participants")
     if len(set(user_ids)) != len(user_ids):
-        raise SplitError("duplicate participants")
+        raise SplitError("duplicate participants", "split_duplicate")
     return split_shares(total, {uid: 1 for uid in user_ids})
 
 
 def split_shares(total: int, weights: dict[int, int]) -> dict[int, int]:
     if total < 0:
-        raise SplitError("total must be non-negative")
+        raise SplitError("total must be non-negative", "split_negative_total")
     if not weights:
-        raise SplitError("at least one participant is required")
+        raise SplitError("at least one participant is required", "split_need_participants")
     if any(w <= 0 for w in weights.values()):
-        raise SplitError("weights must be positive integers")
+        raise SplitError("weights must be positive integers", "split_bad_weights")
     weight_sum = sum(weights.values())
     base = {uid: total * w // weight_sum for uid, w in weights.items()}
     remainder = {uid: total * w % weight_sum for uid, w in weights.items()}
@@ -48,11 +52,11 @@ def split_shares(total: int, weights: dict[int, int]) -> dict[int, int]:
 
 def split_exact(total: int, amounts: dict[int, int]) -> dict[int, int]:
     if not amounts:
-        raise SplitError("at least one participant is required")
+        raise SplitError("at least one participant is required", "split_need_participants")
     if any(a < 0 for a in amounts.values()):
-        raise SplitError("amounts must be non-negative")
+        raise SplitError("amounts must be non-negative", "split_bad_amounts")
     if sum(amounts.values()) != total:
-        raise SplitError("exact amounts must add up to the expense total")
+        raise SplitError("exact amounts must add up to the expense total", "split_exact_sum")
     return dict(amounts)
 
 
@@ -88,7 +92,7 @@ OPTIMAL_LIMIT = 12  # the DP is O(3^n): 12 people is about 0.05 s, 14 was about 
 def minimal_transfers(balances: dict[int, int]) -> list[Transfer]:
     """See _minimal_transfers; results are cached by the balances themselves, so repeated reads of an unchanged group are free."""
     if sum(balances.values()) != 0:
-        raise SplitError("balances must sum to zero")
+        raise SplitError("balances must sum to zero", "split_unbalanced")
     return list(_cached_minimal(tuple(sorted((u, b) for u, b in balances.items() if b != 0))))
 
 
@@ -108,7 +112,7 @@ def _minimal_transfers(balances: dict[int, int]) -> list[Transfer]:
     greedy matching is used (still at most n - 1 transfers).
     """
     if sum(balances.values()) != 0:
-        raise SplitError("balances must sum to zero")
+        raise SplitError("balances must sum to zero", "split_unbalanced")
     nonzero = {uid: b for uid, b in balances.items() if b != 0}
     if not nonzero:
         return []

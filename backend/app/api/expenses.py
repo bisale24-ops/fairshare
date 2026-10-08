@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import config
+from ..errors import ApiError
 from ..db import get_db
 from ..deps import current_user, member_group
 from ..ledger import fmt, log_activity, member_ids, notify, overpaid, push_live, refresh_debt_state, user_names
@@ -24,24 +25,24 @@ def _compute_shares(data: ExpenseIn, members: set[int]) -> tuple[dict[int, int],
     try:
         if s.type == "equal":
             if not s.participants:
-                raise SplitError("participants are required for an equal split")
+                raise SplitError("participants are required for an equal split", "split_need_participants")
             ids = list(dict.fromkeys(s.participants))
             weights: dict[int, int | None] = {uid: None for uid in ids}
             shares = split_equal(data.amount_minor, ids)
         elif s.type == "shares":
             if not s.weights:
-                raise SplitError("weights are required for a split by shares")
+                raise SplitError("weights are required for a split by shares", "split_need_weights")
             weights = dict(s.weights)
             shares = split_shares(data.amount_minor, s.weights)
         else:
             if not s.amounts:
-                raise SplitError("amounts are required for an exact split")
+                raise SplitError("amounts are required for an exact split", "split_need_amounts")
             weights = {uid: None for uid in s.amounts}
             shares = split_exact(data.amount_minor, s.amounts)
     except SplitError as e:
-        raise HTTPException(422, str(e))
+        raise ApiError(422, e.code, str(e))
     if not set(shares) <= members:
-        raise HTTPException(422, "Every participant must be a member of the group")
+        raise ApiError(422, "participant_not_member", "Every participant must be a member of the group")
     return shares, weights
 
 
@@ -82,7 +83,7 @@ def involved_names(db: Session, group_id: int, expenses: list[Expense]) -> dict[
 def _lock_open_group(db: Session, group_id: int) -> Group:
     group = db.execute(select(Group).where(Group.id == group_id).with_for_update()).scalar_one()
     if group.closed:
-        raise HTTPException(409, "The group is closed: no new or edited expenses")
+        raise ApiError(409, "group_closed_expenses", "The group is closed: no new or edited expenses")
     return group
 
 
@@ -98,7 +99,7 @@ def create_expense(
     group = _lock_open_group(db, group.id)
     members = set(member_ids(db, group.id))
     if data.payer_id not in members:
-        raise HTTPException(422, "The payer must be a member of the group")
+        raise ApiError(422, "payer_not_member", "The payer must be a member of the group")
     shares, weights = _compute_shares(data, members)
     expense = Expense(
         group_id=group.id,
@@ -150,13 +151,13 @@ def list_expenses(
 def _may_change(user: User, expense: Expense) -> None:
     """Only whoever recorded the expense or paid it may edit or delete it; other members can still read it."""
     if user.id not in (expense.created_by, expense.payer_id):
-        raise HTTPException(403, "Only the person who added the expense or paid for it can change it")
+        raise ApiError(403, "not_expense_owner", "Only the person who added the expense or paid for it can change it")
 
 
 def _get_expense(db: Session, group: Group, expense_id: int) -> Expense:
     e = db.get(Expense, expense_id)
     if not e or e.group_id != group.id or e.deleted:
-        raise HTTPException(404, "Expense not found")
+        raise ApiError(404, "expense_not_found", "Expense not found")
     return e
 
 
@@ -172,12 +173,12 @@ def edit_expense(
     expense = _get_expense(db, group, expense_id)
     _may_change(user, expense)
     if data.version is not None and data.version != expense.version:
-        raise HTTPException(409, "This expense was changed by someone else in the meantime: reload it and try again")
+        raise ApiError(409, "expense_conflict", "This expense was changed by someone else in the meantime: reload it and try again")
     members = set(member_ids(db, group.id))
     # a person who took part in THIS expense and has since left may stay in it; nobody new may be added from outside
     allowed = members | {s.user_id for s in expense.shares} | {expense.payer_id}
     if data.payer_id not in allowed:
-        raise HTTPException(422, "The payer must be a member of the group")
+        raise ApiError(422, "payer_not_member", "The payer must be a member of the group")
     shares, weights = _compute_shares(data, allowed)
     touched = {s.user_id for s in expense.shares} | {expense.payer_id}
     expense.payer_id = data.payer_id
@@ -275,10 +276,10 @@ def upload_receipt(  # plain def on purpose: blocking file/DB work runs in the t
     expense = _get_expense(db, group, expense_id)
     content = file.file.read(config.MAX_RECEIPT_BYTES + 1)
     if len(content) > config.MAX_RECEIPT_BYTES:
-        raise HTTPException(413, "Receipt is too large")
+        raise ApiError(413, "receipt_too_large", "Receipt is too large")
     sniffed = _sniff_receipt(content[:16])
     if not sniffed:
-        raise HTTPException(415, "Receipt must be a real PNG, JPEG, WebP or PDF file")
+        raise ApiError(415, "receipt_bad_type", "Receipt must be a real PNG, JPEG, WebP or PDF file")
     ext, _ = sniffed
     os.makedirs(config.UPLOAD_DIR, exist_ok=True)
     name = f"{uuid.uuid4().hex}{ext}"
@@ -304,10 +305,10 @@ def upload_receipt(  # plain def on purpose: blocking file/DB work runs in the t
 def download_receipt(expense_id: int, group: Group = Depends(member_group), db: Session = Depends(get_db)):
     expense = _get_expense(db, group, expense_id)
     if not expense.receipt_path:
-        raise HTTPException(404, "No receipt")
+        raise ApiError(404, "no_receipt", "No receipt")
     path = os.path.join(config.UPLOAD_DIR, os.path.basename(expense.receipt_path))
     if not os.path.exists(path):
-        raise HTTPException(404, "Receipt file is missing")
+        raise ApiError(404, "receipt_file_missing", "Receipt file is missing")
     media = RECEIPT_MEDIA.get(os.path.splitext(path)[1], "application/octet-stream")
     # media type comes from the stored extension (set from the sniffed bytes), never from the user's file name
     return FileResponse(

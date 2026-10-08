@@ -49,7 +49,7 @@ def test_stale_edit_is_rejected_with_a_conflict(client, api):
     first = client.put(url, json=_body(api, a, 1200, ids, version=1), headers=a["h"])
     assert first.status_code == 200 and first.json()["version"] == 2
     stale = client.put(url, json=_body(api, a, 1300, ids, version=1), headers=a["h"])
-    assert stale.status_code == 409 and "changed by someone else" in stale.json()["detail"]
+    assert stale.status_code == 409 and "changed by someone else" in stale.json()["detail"]["message"]
     assert client.put(url, json=_body(api, a, 1300, ids, version=2), headers=a["h"]).status_code == 200
     assert client.put(url, json=_body(api, a, 1400, ids), headers=a["h"]).status_code == 200  # version is optional for API users
 

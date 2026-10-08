@@ -72,7 +72,7 @@ try {
   await alice.page.getByText("Дрова").waitFor({ timeout: 5000 });
   alice.page.on("dialog", (d) => d.accept());
   await alice.page.getByRole("button", { name: "Удалить" }).click();
-  await alice.page.getByText("Only the person who added the expense or paid for it can change it").waitFor({ timeout: 5000 });
+  await alice.page.getByText("Менять расход может только тот, кто его добавил, или плательщик").waitFor({ timeout: 5000 });
   assert.equal(await alice.page.getByText("Дрова").count(), 1, "a bystander must not be able to delete it");
 
   // 4. Alice pays her whole 15.00 debt, Bob confirms, then Bob edits the expense down to 10.00:

@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import config, events
+from ..errors import ApiError
 from ..db import get_db
 from ..deps import current_user, stream_user
 from ..models import Notification, Outbox, User
@@ -31,7 +32,7 @@ def notifications(user: User = Depends(current_user), db: Session = Depends(get_
 def mark_one_read(notification_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     n = db.get(Notification, notification_id)
     if not n or n.user_id != user.id:
-        raise HTTPException(404, "Notification not found")
+        raise ApiError(404, "notification_not_found", "Notification not found")
     n.read = True
     db.commit()
     return {"ok": True}
@@ -49,7 +50,7 @@ def mark_read(user: User = Depends(current_user), db: Session = Depends(get_db))
 def my_outbox(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """E-mail is stubbed: this shows the messages that were 'sent' to your address (development aid, see config.DEV_MAILBOX)."""
     if not config.DEV_MAILBOX:
-        raise HTTPException(404, "Not found")
+        raise ApiError(404, "not_found", "Not found")
     rows = db.scalars(select(Outbox).where(Outbox.to_email == user.email).order_by(Outbox.id.desc()).limit(50))
     return [{"id": r.id, "subject": r.subject, "body": r.body, "kind": r.kind, "created_at": r.created_at} for r in rows]
 

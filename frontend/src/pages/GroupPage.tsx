@@ -30,7 +30,7 @@ export function GroupPage({ id, user }: { id: number; user: User }) {
   if (!g) {
     return group.error ? (
       <div className="card" role="alert">
-        <div className="error">{group.error === "Group not found" ? "Группа не найдена или у вас нет к ней доступа." : group.error}</div>
+        <div className="error">{group.error}</div>
         <a href="#/">← К списку групп</a>
       </div>
     ) : (

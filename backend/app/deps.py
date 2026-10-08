@@ -4,6 +4,7 @@ from fastapi import Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from . import config
+from .errors import ApiError
 from .db import SessionLocal, get_db
 from .models import AuthToken, Group, Membership, User, now_utc
 from .security import token_hash
@@ -18,16 +19,16 @@ def _raw_token(request: Request, authorization: str | None, access_token: str | 
     # Every other route ignores it, which keeps it out of reach of ordinary links, logs and referrers.
     if access_token and request.url.path == STREAM_PATH:
         return access_token
-    raise HTTPException(401, "Not authenticated")
+    raise ApiError(401, "not_authenticated", "Not authenticated")
 
 
 def _user_for_token(db: Session, raw: str) -> User:
     row = db.get(AuthToken, token_hash(raw))
     if not row or now_utc() - row.created_at > timedelta(days=config.TOKEN_TTL_DAYS):
-        raise HTTPException(401, "Invalid or expired token")
+        raise ApiError(401, "session_invalid", "Invalid or expired token")
     user = db.get(User, row.user_id)
     if not user:
-        raise HTTPException(401, "Invalid token")
+        raise ApiError(401, "session_invalid", "Invalid token")
     return user
 
 
@@ -57,5 +58,5 @@ def stream_user(
 def member_group(group_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Group:
     group = db.get(Group, group_id)
     if not group or not db.get(Membership, (group_id, user.id)):
-        raise HTTPException(404, "Group not found")
+        raise ApiError(404, "group_not_found", "Group not found")
     return group
