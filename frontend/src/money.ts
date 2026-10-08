@@ -17,3 +17,11 @@ export function formatMoney(minor: number, currency: string): string {
 export function minorToInput(minor: number): string {
   return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, "0")}`;
 }
+
+/** Russian plural: 1 расход, 2 расхода, 5 расходов, 11 расходов, 21 расход. */
+export function pluralize(n: number, forms: [string, string, string]): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  const form = m10 === 1 && m100 !== 11 ? forms[0] : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? forms[1] : forms[2];
+  return `${n} ${form}`;
+}

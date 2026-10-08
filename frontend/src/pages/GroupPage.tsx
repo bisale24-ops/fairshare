@@ -4,12 +4,19 @@ import { ExpenseForm } from "../components/ExpenseForm";
 import { Money } from "../components/Money";
 import { useResource } from "../hooks";
 import { useLive } from "../live";
-import { formatMoney, minorToInput, parseMoney } from "../money";
+import { formatMoney, minorToInput, parseMoney, pluralize } from "../money";
 
 type Tab = "expenses" | "balances" | "settlements" | "activity" | "settings";
 const TABS: [Tab, string][] = [
   ["expenses", "Расходы"], ["balances", "Балансы"], ["settlements", "Погашения"], ["activity", "Лента"], ["settings", "Настройки"],
 ];
+const LIVE_LABEL: Record<string, string> = {
+  expense_added: "добавлен расход", expense_edited: "расход изменён", expense_deleted: "расход удалён", receipt_attached: "приложен чек",
+  settlement_proposed: "новый платёж ждёт подтверждения", settlement_confirmed: "платёж подтверждён", settlement_rejected: "платёж отклонён",
+  joined: "новый участник", group_closed: "группа закрыта", group_reopened: "группа открыта снова", group_updated: "настройки изменены", reminder: "напоминание",
+};
+const liveLabel = (kind?: string) => (kind && LIVE_LABEL[kind]) || "изменения в группе";
+
 const CATEGORY_LABEL: Record<string, string> = {
   food: "Еда", transport: "Транспорт", housing: "Жильё", entertainment: "Развлечения", groceries: "Продукты", utilities: "Коммунальные", other: "Другое",
 };
@@ -33,7 +40,7 @@ export function GroupPage({ id, user }: { id: number; user: User }) {
           <Money minor={g.my_balance_minor} currency={g.currency} big />
         </div>
       </div>
-      {last?.group_id === id && <div className="live small" aria-live="polite">Обновлено в реальном времени: {last.kind}</div>}
+      {last?.group_id === id && <div className="live small" aria-live="polite">Обновлено в реальном времени: {liveLabel(last.kind)}</div>}
       <nav className="tabs" role="tablist">
         {TABS.map(([t, l]) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>{l}</button>
@@ -289,7 +296,7 @@ function ReportView({ g, report }: { g: Group; report: Report | null }) {
   return (
     <div className="report">
       <h4>Итоговый отчёт</h4>
-      <div>Потрачено: <strong>{formatMoney(r.total_spent_minor, g.currency)}</strong> в {r.expense_count} расходах; погашено {formatMoney(r.settled_minor, g.currency)}</div>
+      <div>Потрачено: <strong>{formatMoney(r.total_spent_minor, g.currency)}</strong>, {pluralize(r.expense_count, ["расход", "расхода", "расходов"])}; погашено {formatMoney(r.settled_minor, g.currency)}</div>
       <div className="chips">
         {Object.entries(r.by_category).map(([c, v]) => <span key={c} className="chip">{CATEGORY_LABEL[c] ?? c}: {formatMoney(v, g.currency)}</span>)}
       </div>

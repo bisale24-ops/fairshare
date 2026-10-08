@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney, minorToInput, parseMoney } from "./money";
+import { formatMoney, minorToInput, parseMoney, pluralize } from "./money";
 
 describe("money", () => {
   it("parses decimals without floating point", () => {
@@ -15,5 +15,11 @@ describe("money", () => {
     expect(formatMoney(123456, "USD")).toBe("1 234,56 USD");
     expect(formatMoney(-5, "EUR")).toBe("−0,05 EUR");
     expect(parseMoney(minorToInput(1999))).toBe(1999);
+  });
+  it("pluralizes in Russian", () => {
+    const f: [string, string, string] = ["расход", "расхода", "расходов"];
+    expect([1, 2, 5, 11, 12, 21, 22, 25, 111].map((n) => pluralize(n, f))).toEqual([
+      "1 расход", "2 расхода", "5 расходов", "11 расходов", "12 расходов", "21 расход", "22 расхода", "25 расходов", "111 расходов",
+    ]);
   });
 });

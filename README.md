@@ -28,11 +28,18 @@ cd frontend && npm install && npm run dev                                       
 
 ```bash
 cd backend && DATABASE_URL=postgresql+psycopg://fairshare:fairshare@localhost:5433/fairshare uv run pytest -q   # 24 tests
-cd frontend && npm test && npm run build
+cd frontend && npm test && npm run build                      # 5 unit tests + type-check + build
+cd frontend && BASE_URL=http://localhost:8080 npm run e2e      # two browsers, real UI (needs Google Chrome + the running stack)
 ```
 
 CI (`.github/workflows/ci.yml`) runs: backend tests against a Postgres service, frontend tests and build, and
-`docker compose up --build --wait` plus a smoke test through the public port.
+`docker compose up --build --wait`, a smoke test through the public port and the browser e2e below.
+
+**Browser end-to-end** (`frontend/e2e/two-people.mjs`, Playwright driving the installed Chrome): two separate browser
+contexts act as two people. Alice creates a group; Bob joins by her link and adds 10.01; Alice's page, never reloaded,
+shows −5,01 and an unread notification; Alice pays 2.00; the payment stays pending and changes no balance until Bob
+confirms; then both see ∓3,01; Alice closes the group and Bob can no longer add expenses. Screenshots from that run:
+`docs/screenshots/`.
 
 | Requirement from the case | Where it is proven |
 |---|---|
@@ -44,7 +51,7 @@ CI (`.github/workflows/ci.yml`) runs: backend tests against a Postgres service, 
 | Reminder: after the term, at most weekly, never if paid | `test_reminders_after_term_once_a_week_never_when_paid` (clock is injected) |
 | Two simultaneous expenses are both counted; balances sum to zero | `test_two_concurrent_expenses_…` (30 expenses from 12 threads) |
 | Closing: no new expenses, summary e-mail to everyone, reopen | `test_closed_group_blocks_expenses_sends_summary_and_reopens` |
-| Updates reach every open client immediately | `tests/test_live.py` (two real HTTP clients on a real server) + checked by hand in two browser tabs |
+| Updates reach every open client immediately | `tests/test_live.py` (two real HTTP clients) and the browser e2e (two browsers) |
 | Balance across all groups together | `test_balances_across_all_groups_are_netted_per_person_and_currency` |
 
 The tests run on the real Alembic migration, not on `create_all`. I also broke the code on purpose to check the tests
@@ -80,7 +87,7 @@ notice (see DEVLOG, 2026-10-09 01:00): two of three mutants were caught; the thi
 Works and is tested: everything in the table above.
 
 Known gaps, not hidden:
-- No browser end-to-end suite in CI. The two-tab flow was checked by hand (and the API-level two-client test is automated).
+- The browser e2e covers one happy path (create, join, add, pay, confirm, close); editing, deleting, receipts and reminders are covered at API level only.
 - Live updates need a single API worker; tokens never expire; no password reset; no rate limiting.
 - E-mail is a stub (outbox table). "Invite by e-mail" stores the invite and "sends" the group link; access is by the
   group's link token, so an invite e-mail is not tied to one address.
@@ -93,7 +100,7 @@ Known gaps, not hidden:
 
 ## Next steps (what I would do next)
 
-Playwright two-context e2e in CI; LISTEN/NOTIFY hub and multiple workers; per-currency decimals; a warning when an edit
+More e2e paths (edit/delete, receipts); LISTEN/NOTIFY hub and multiple workers; per-currency decimals; a warning when an edit
 over-settles a debt; token expiry and password reset; real SMTP transport behind the existing `send_email` seam.
 
 ## Made with

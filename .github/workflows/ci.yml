@@ -40,5 +40,13 @@ jobs:
             -d '{"email":"ci@example.com","name":"CI","password":"secret1"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
           curl -fsS -X POST localhost:8080/api/groups -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
             -d '{"name":"CI","currency":"USD"}' | grep -q '"name":"CI"'
+      - name: Browser end-to-end, two people in two browsers (real Chrome)
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          SHOTS_DIR=/tmp/shots npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: e2e-screenshots, path: /tmp/shots }
       - if: failure()
         run: docker compose logs
