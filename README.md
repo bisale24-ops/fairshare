@@ -1,5 +1,7 @@
 # Fairshare — shared expenses (Mad Devs test, case 6)
 
+[![ci](https://github.com/bisale24-ops/fairshare/actions/workflows/ci.yml/badge.svg)](https://github.com/bisale24-ops/fairshare/actions/workflows/ci.yml)
+
 Groups, expenses split three ways, live balances, minimal transfers, payments confirmed by the other side, activity feed,
 reminders, closing a group with a report, leaving and removing members. React + FastAPI + PostgreSQL.
 
@@ -34,10 +36,10 @@ cd frontend && BACKEND_CONTAINER=<api container> npm run e2e:restart   # kills t
 cd backend && uv run python scripts/perf.py       # latency numbers on a busy group
 ```
 
-CI (`.github/workflows/ci.yml`) runs the backend tests against a Postgres service, the frontend tests and build, and
-`docker compose up --build --wait` + a smoke test + the four browser scenarios. **CI has not run on GitHub yet** (the repository
-is not published); the same compose file was brought up locally with the official `docker:cli` image and all browser scenarios
-passed against it.
+CI (`.github/workflows/ci.yml`) runs on every push: the backend tests against a Postgres service, the frontend tests and build,
+and `docker compose up --build --wait` + a smoke test + all browser scenarios, including the ones that kill the API. It is green
+on GitHub's machines. Its first run found a real flaw in one of my tests (a test proxy that read an answer in a single `recv`),
+fixed in the next commit; that is why the history has a failed run.
 
 | Requirement from the case | Where it is proven |
 |---|---|
@@ -167,6 +169,7 @@ Known gaps, not hidden:
   the totals are exact, the attribution to a person is a view of the plan.
 - Any member can close, reopen or change a group's settings (the case does not say who may).
 - The UI is Russian only. Payments are not tied to a payment method; there is no currency conversion (a group has one currency).
+- Not run in CI: `scripts/perf.py` (numbers above are from one laptop).
 - A crash of the **database** server in the middle of a write is covered only by PostgreSQL's own guarantees (a dropped connection is
   tested, a crashed database is not). Idempotency keys cover create-expense and create-payment; other actions (confirm, close,
   leave) are naturally safe to repeat or answer with a clear conflict.
