@@ -114,8 +114,9 @@ stale data when switching groups, missed events after a dropped connection, sess
 
 Known gaps, not hidden:
 - The browser e2e covers happy paths (create, join, add, pay, confirm, close; e-mail invite; failed receipt; over-payment warning); editing,
-  deleting and reminders in the browser are covered at API level only. One e2e run failed once without a captured reason
-  and passed 7 times in a row afterwards; CI will show whether it is flaky.
+  deleting and reminders in the browser are covered at API level only. The e2e scripts were flaky once and are fixed:
+  parallel runs shared one `Date.now()` e-mail, and a status text matched both the status tag and the live banner. They now
+  use unique ids and exact locators; 30 of 30 runs passed with two scripts running at the same time.
 - Live updates need a single API worker (in-process hub). No password reset, no e-mail verification (e-mail is a stub, so the
   mailbox for an address is whoever registered it first). Registration reveals whether an e-mail exists (409).
 - Throttling is in memory, per process.

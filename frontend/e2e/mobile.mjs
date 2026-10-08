@@ -2,6 +2,7 @@
 // Usage: BASE_URL=http://localhost:8080 node e2e/mobile.mjs
 import { chromium } from "playwright-core";
 import assert from "node:assert/strict";
+import { uid } from "./util.mjs";
 import { mkdirSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:8080";
@@ -22,7 +23,7 @@ try {
   await noSideScroll("login");
   await page.getByText("Нет аккаунта? Зарегистрироваться").click();
   await page.getByLabel("Имя").fill("Мобильный");
-  await page.getByLabel("E-mail").fill(`mobile${Date.now()}@example.com`);
+  await page.getByLabel("E-mail").fill(`mobile${uid()}@example.com`);
   await page.getByLabel("Пароль").fill("e2e-pass-123");
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
   await page.getByPlaceholder("Поездка в Сочи").fill("Поездка с очень длинным названием для проверки переноса строк");

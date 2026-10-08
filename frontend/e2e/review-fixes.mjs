@@ -3,12 +3,13 @@
 //  2. a failed receipt upload must not lead to the same expense being created twice.
 import { chromium } from "playwright-core";
 import assert from "node:assert/strict";
+import { uid } from "./util.mjs";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:8080";
-const stamp = Date.now();
+const stamp = uid();
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 
 async function person(name, slug) {
