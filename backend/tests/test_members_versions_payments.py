@@ -149,3 +149,17 @@ def test_notifications_can_be_read_one_by_one(client, api):
     after = {n["id"]: n["read"] for n in client.get("/api/notifications", headers=b["h"]).json()}
     assert after == {notes[0]["id"]: True, notes[1]["id"]: False}
     assert client.post(f"/api/notifications/{notes[1]['id']}/read", headers=a["h"]).status_code == 404  # not yours
+
+
+def test_when_the_creator_leaves_the_longest_member_takes_over(client, api):
+    a, b, c = api.user(), api.user(), api.user()
+    g = api.group(a, [b, c])  # b joined before c
+    assert api.group_view(g, a)["created_by"] == a["id"]
+    assert client.post(f"/api/groups/{g['id']}/leave", headers=a["h"]).status_code == 200
+    view = api.group_view(g, b)
+    assert view["created_by"] == b["id"]
+    feed = client.get(f"/api/groups/{g['id']}/activity", headers=b["h"]).json()
+    assert {f["kind"] for f in feed[:2]} == {"new_owner", "left"}
+    # the new owner really has the rights
+    assert client.delete(f"/api/groups/{g['id']}/members/{c['id']}", headers=b["h"]).status_code == 200
+    assert client.delete(f"/api/groups/{g['id']}/members/{b['id']}", headers=c["h"]).status_code == 404  # c is gone

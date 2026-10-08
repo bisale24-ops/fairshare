@@ -78,9 +78,9 @@ try {
   await alice.page.screenshot({ path: `${SHOTS}/04-alice-after-confirmation.png` });
 
   // Close the group: no new expenses, report is shown
-  alice.page.on("dialog", (d) => d.accept());
   await alice.page.getByRole("tab", { name: "Настройки" }).click();
   await alice.page.getByRole("button", { name: "Закрыть группу и отправить итог" }).click();
+  await alice.page.getByRole("alertdialog").getByRole("button", { name: "Закрыть группу" }).click();
   await alice.page.getByText("Итоговый отчёт").waitFor();
   await alice.page.screenshot({ path: `${SHOTS}/05-closed-report.png`, fullPage: true });
   await bob.page.getByRole("tab", { name: "Расходы" }).click();

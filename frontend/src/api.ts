@@ -8,13 +8,14 @@ export type Group = {
 export type GroupRow = { id: number; name: string; currency: string; closed: boolean; members: number; my_balance_minor: number };
 export type Share = { user_id: number; name: string; amount_minor: number; weight: number | null };
 export type Expense = {
-  id: number; payer_id: number; payer_name: string; amount_minor: number; title: string; category: string;
+  id: number; version: number; payer_id: number; payer_name: string; amount_minor: number; title: string; category: string;
   spent_on: string; comment: string; split_type: "equal" | "shares" | "exact"; has_receipt: boolean;
   receipt_name: string | null; shares: Share[];
 };
 export type Overpaid = { user_id: number; name: string; amount_minor: number };
 export type Settlement = {
   id: number; from_user: number; from_name: string; to_user: number; to_name: string;
+  created_by: number; confirmer: number;
   amount_minor: number; status: "pending" | "confirmed" | "rejected"; created_at: string;
 };
 export type Activity = { id: number; kind: string; actor: string | null; payload: Record<string, any>; created_at: string };
@@ -88,7 +89,7 @@ export const api = {
   rotateInviteLink: (id: number) => call<Group>("POST", `/groups/${id}/invite-link/rotate`),
   joinInfo: (t: string) => call<{ name: string; currency: string; closed: boolean }>("GET", `/join/${t}`),
   join: (t: string) => call<Group>("POST", `/join/${t}`),
-  expenses: (id: number) => call<Expense[]>("GET", `/groups/${id}/expenses`),
+  expenses: (id: number, limit = 50) => call<Expense[]>("GET", `/groups/${id}/expenses?limit=${limit}`),
   saveExpense: (gid: number, eid: number | null, body: unknown) =>
     eid ? call<Expense & { warnings: Overpaid[] }>("PUT", `/groups/${gid}/expenses/${eid}`, body) : call<Expense & { warnings?: Overpaid[] }>("POST", `/groups/${gid}/expenses`, body),
   deleteExpense: (gid: number, eid: number) => call<{ ok: boolean; warnings: Overpaid[] }>("DELETE", `/groups/${gid}/expenses/${eid}`),
@@ -99,7 +100,9 @@ export const api = {
   },
   receiptUrl: (gid: number, eid: number) => `/api/groups/${gid}/expenses/${eid}/receipt`,
   settlements: (id: number) => call<Settlement[]>("GET", `/groups/${id}/settlements`),
-  settle: (gid: number, to_user: number, amount_minor: number) => call<Settlement>("POST", `/groups/${gid}/settlements`, { to_user, amount_minor }),
+  /** direction "paid": I paid `other`; "received": `other` paid me (they confirm). */
+  settle: (gid: number, other: number, amount_minor: number, direction: "paid" | "received" = "paid") =>
+    call<Settlement>("POST", `/groups/${gid}/settlements`, direction === "paid" ? { to_user: other, amount_minor } : { from_user: other, amount_minor }),
   confirm: (sid: number) => call<Settlement>("POST", `/settlements/${sid}/confirm`),
   reject: (sid: number) => call<Settlement>("POST", `/settlements/${sid}/reject`),
   activity: (id: number) => call<Activity[]>("GET", `/groups/${id}/activity`),
@@ -109,6 +112,10 @@ export const api = {
   myBalances: () => call<GlobalBalance[]>("GET", "/me/balances"),
   notifications: () => call<Notice[]>("GET", "/notifications"),
   readNotifications: () => call("POST", "/notifications/read"),
+  readNotification: (id: number) => call("POST", `/notifications/${id}/read`),
+  leave: (gid: number) => call("POST", `/groups/${gid}/leave`),
+  removeMember: (gid: number, uid: number) => call<Group>("DELETE", `/groups/${gid}/members/${uid}`),
+  deleteGroup: (gid: number) => call("DELETE", `/groups/${gid}`),
   outbox: () => call<{ id: number; subject: string; body: string; created_at: string }[]>("GET", "/me/outbox"),
 };
 

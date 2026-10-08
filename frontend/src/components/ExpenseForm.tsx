@@ -27,6 +27,8 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
   // Set once the expense is saved. If the receipt upload then fails, pressing the button again edits this expense
   // instead of creating a second one (which would count the money twice).
   const [savedId, setSavedId] = useState<number | null>(null);
+  // Echoed back on every edit: if someone else changed the expense meanwhile the server answers 409 instead of overwriting them.
+  const [version, setVersion] = useState<number | undefined>(expense?.version);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -66,9 +68,10 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
     setBusy(true);
     try {
       const saved = await api.saveExpense(group.id, expense?.id ?? savedId, {
-        payer_id: payer, amount_minor: total, title, category, spent_on: date, comment, split,
+        payer_id: payer, amount_minor: total, title, category, spent_on: date, comment, split, version,
       });
       setSavedId(saved.id);
+      setVersion(saved.version);
       if (file) {
         try {
           await api.uploadReceipt(group.id, saved.id, file);

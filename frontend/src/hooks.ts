@@ -6,8 +6,10 @@ import { useLive } from "./live";
  * A slower, older answer never overwrites a newer one, and data from a previous dependency
  * (e.g. the previous group) is dropped at once instead of being shown under the new id.
  */
-export function useResource<T>(load: () => Promise<T>, deps: unknown[]) {
-  const { tick } = useLive();
+export function useResource<T>(load: () => Promise<T>, deps: unknown[], group?: number) {
+  const live = useLive();
+  // a screen about one group follows only that group (and reconnects); the others follow everything
+  const tick = group == null ? live.tick : (live.groupTicks[group] ?? 0) + live.reconnects;
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const latest = useRef(0);

@@ -7,19 +7,20 @@ export function Header({ user, onLogout }: { user: User; onLogout: () => void })
   const [mailOpen, setMailOpen] = useState(false);
   const notes = useResource(() => api.notifications(), []);
   const mail = useResource(() => api.outbox(), []);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); setMailOpen(false); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setOpen(false); setMailOpen(false); }
+    };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, []);
+
   const unread = (notes.data ?? []).filter((n) => !n.read).length;
 
-  async function toggle() {
-    setOpen(!open);
-    if (!open && unread) {
-      await api.readNotifications();
-      setTimeout(notes.reload, 1500);
-    }
+  async function readAll() {
+    await api.readNotifications();
+    notes.reload();
   }
 
   return (
@@ -39,14 +40,20 @@ export function Header({ user, onLogout }: { user: User; onLogout: () => void })
         )}
       </div>
       <div className="menu">
-        <button className="ghost" onClick={toggle} aria-label="Уведомления" aria-expanded={open}>
+        <button className="ghost" onClick={() => setOpen(!open)} aria-label="Уведомления" aria-expanded={open}>
           🔔{unread > 0 && <span className="badge" data-testid="unread">{unread}</span>}
         </button>
         {open && (
           <div className="popover">
             {(notes.data ?? []).length === 0 && <div className="muted">Пока тихо</div>}
+            {unread > 0 && <button className="link" onClick={readAll}>Отметить все прочитанными</button>}
             {(notes.data ?? []).slice(0, 20).map((n) => (
-              <a key={n.id} href={n.group_id ? `#/groups/${n.group_id}` : "#/"} onClick={() => setOpen(false)} className={`note ${n.read ? "" : "unread"}`}>
+              <a
+                key={n.id}
+                href={n.group_id ? `#/groups/${n.group_id}` : "#/"}
+                onClick={() => { setOpen(false); if (!n.read) api.readNotification(n.id).then(notes.reload); }}
+                className={`note ${n.read ? "" : "unread"}`}
+              >
                 {n.text}
               </a>
             ))}

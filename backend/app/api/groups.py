@@ -358,6 +358,13 @@ def _remove_member(db: Session, group: Group, uid: int, actor: User, kind: str) 
         raise ApiError(409, "last_member", "The last member cannot leave: delete the group instead")
     _may_leave(db, group, uid)
     db.delete(db.get(Membership, (group.id, uid)))
+    if group.created_by == uid:
+        # the group must never be left without someone who can remove members or delete it: the longest-standing member takes over
+        heir = db.scalar(
+            select(Membership.user_id).where(Membership.group_id == group.id, Membership.user_id != uid).order_by(Membership.joined_at, Membership.user_id).limit(1)
+        )
+        group.created_by = heir
+        log_activity(db, group.id, heir, "new_owner", {"name": db.get(User, heir).name, "user_id": heir})
     db.execute(delete(DebtState).where(DebtState.group_id == group.id, DebtState.user_id == uid))
     name = db.get(User, uid).name
     log_activity(db, group.id, actor.id, kind, {"name": name, "user_id": uid})

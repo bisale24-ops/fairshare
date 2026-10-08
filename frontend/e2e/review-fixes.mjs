@@ -70,8 +70,8 @@ try {
   // 3. Alice sees it live, once, and cannot change Bob's expense
   await alice.page.getByRole("tab", { name: "Расходы" }).click();
   await alice.page.getByText("Дрова").waitFor({ timeout: 5000 });
-  alice.page.on("dialog", (d) => d.accept());
   await alice.page.getByRole("button", { name: "Удалить" }).click();
+  await alice.page.getByRole("alertdialog").getByRole("button", { name: "Удалить" }).click();
   await alice.page.getByText("Менять расход может только тот, кто его добавил, или плательщик").waitFor({ timeout: 5000 });
   assert.equal(await alice.page.getByText("Дрова").count(), 1, "a bystander must not be able to delete it");
 

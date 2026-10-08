@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, getToken, setToken, type User } from "./api";
 import { useHash } from "./hooks";
+import { ConfirmProvider } from "./components/Confirm";
 import { LiveProvider } from "./live";
 import { AuthPage } from "./pages/AuthPage";
 import { GroupPage } from "./pages/GroupPage";
@@ -40,10 +41,12 @@ export default function App() {
 
   return (
     <LiveProvider>
-      <Header user={user} onLogout={logout} />
-      <main className="container">
-        {join ? <JoinPage token={join[1]} /> : group ? <GroupPage key={group[1]} id={Number(group[1])} user={user} /> : <GroupsPage />}
-      </main>
+      <ConfirmProvider>
+        <Header user={user} onLogout={logout} />
+        <main className="container">
+          {join ? <JoinPage token={join[1]} /> : group ? <GroupPage key={group[1]} id={Number(group[1])} user={user} /> : <GroupsPage />}
+        </main>
+      </ConfirmProvider>
     </LiveProvider>
   );
 }
