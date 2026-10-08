@@ -193,6 +193,9 @@ def test_balances_across_all_groups_are_netted_per_person_and_currency(client, a
     assert data["EUR"]["net_minor"] == 300 and len(data["USD"]["groups"]) == 2
 
 
+PNG = b"\x89PNG\r\n\x1a\n"
+
+
 def test_receipt_upload_validation(client, api):
     a = api.user()
     g = api.group(a)
@@ -200,7 +203,7 @@ def test_receipt_upload_validation(client, api):
     url = f"/api/groups/{g['id']}/expenses/{e['id']}/receipt"
     assert client.post(url, files={"file": ("x.exe", b"MZ", "application/x-msdownload")}, headers=a["h"]).status_code == 415
     assert client.post(url, files={"file": ("big.png", b"0" * (5 * 1024 * 1024 + 10), "image/png")}, headers=a["h"]).status_code == 413
-    assert client.post(url, files={"file": ("r.png", b"\x89PNG data", "image/png")}, headers=a["h"]).status_code == 200
+    assert client.post(url, files={"file": ("r.png", PNG + b"data", "image/png")}, headers=a["h"]).status_code == 200
     got = client.get(url, headers=a["h"])
-    assert got.status_code == 200 and got.content == b"\x89PNG data"
+    assert got.status_code == 200 and got.content == PNG + b"data"
     assert client.get(url, headers=api.user()["h"]).status_code == 404

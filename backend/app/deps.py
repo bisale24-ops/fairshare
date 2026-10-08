@@ -1,31 +1,57 @@
-from fastapi import Depends, Header, HTTPException, Query
-from sqlalchemy import select
+from datetime import timedelta
+
+from fastapi import Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from .db import get_db
-from .models import AuthToken, Group, Membership, User
+from . import config
+from .db import SessionLocal, get_db
+from .models import AuthToken, Group, Membership, User, now_utc
 from .security import token_hash
 
+STREAM_PATH = "/api/stream"
 
-def current_user(
-    authorization: str | None = Header(default=None),
-    access_token: str | None = Query(default=None),
-    db: Session = Depends(get_db),
-) -> User:
-    raw = None
+
+def _raw_token(request: Request, authorization: str | None, access_token: str | None) -> str:
     if authorization and authorization.lower().startswith("bearer "):
-        raw = authorization[7:].strip()
-    elif access_token:
-        raw = access_token  # EventSource cannot set headers, so the stream accepts ?token=
-    if not raw:
-        raise HTTPException(401, "Not authenticated")
+        return authorization[7:].strip()
+    # EventSource cannot set headers, so ONLY the live stream may take the token from the query string.
+    # Every other route ignores it, which keeps it out of reach of ordinary links, logs and referrers.
+    if access_token and request.url.path == STREAM_PATH:
+        return access_token
+    raise HTTPException(401, "Not authenticated")
+
+
+def _user_for_token(db: Session, raw: str) -> User:
     row = db.get(AuthToken, token_hash(raw))
-    if not row:
-        raise HTTPException(401, "Invalid token")
+    if not row or now_utc() - row.created_at > timedelta(days=config.TOKEN_TTL_DAYS):
+        raise HTTPException(401, "Invalid or expired token")
     user = db.get(User, row.user_id)
     if not user:
         raise HTTPException(401, "Invalid token")
     return user
+
+
+def current_user(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    access_token: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    return _user_for_token(db, _raw_token(request, authorization, access_token))
+
+
+def stream_user(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    access_token: str | None = Query(default=None),
+) -> User:
+    """Like current_user, but takes its own short-lived DB session.
+
+    A stream stays open for hours; a session injected with Depends(get_db) would stay checked out of the
+    connection pool for that whole time, and a few open tabs would exhaust the pool.
+    """
+    with SessionLocal() as db:
+        return _user_for_token(db, _raw_token(request, authorization, access_token))
 
 
 def member_group(group_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Group:

@@ -18,8 +18,6 @@ from ..schemas import ExpenseIn
 
 router = APIRouter(prefix="/api", tags=["expenses"])
 
-ALLOWED_RECEIPT_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "application/pdf": ".pdf"}
-
 
 def _compute_shares(data: ExpenseIn, members: set[int]) -> tuple[dict[int, int], dict[int, int | None]]:
     s = data.split
@@ -199,29 +197,58 @@ def delete_expense(
     return {"ok": True}
 
 
+def _sniff_receipt(head: bytes) -> tuple[str, str] | None:
+    """Real type from the file's own bytes; the client-declared Content-Type is not trusted."""
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png", "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return ".jpg", "image/jpeg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    if head.startswith(b"%PDF-"):
+        return ".pdf", "application/pdf"
+    return None
+
+
+RECEIPT_MEDIA = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".pdf": "application/pdf"}
+
+
 @router.post("/groups/{group_id}/expenses/{expense_id}/receipt")
-async def upload_receipt(
+def upload_receipt(  # plain def on purpose: blocking file/DB work runs in the thread pool, not on the event loop
     expense_id: int,
     file: UploadFile = File(...),
     group: Group = Depends(member_group),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    group = _lock_open_group(db, group.id)
     expense = _get_expense(db, group, expense_id)
-    ext = ALLOWED_RECEIPT_TYPES.get(file.content_type or "")
-    if not ext:
-        raise HTTPException(415, "Receipt must be PNG, JPEG, WebP or PDF")
-    content = await file.read(config.MAX_RECEIPT_BYTES + 1)
+    content = file.file.read(config.MAX_RECEIPT_BYTES + 1)
     if len(content) > config.MAX_RECEIPT_BYTES:
         raise HTTPException(413, "Receipt is too large")
+    sniffed = _sniff_receipt(content[:16])
+    if not sniffed:
+        raise HTTPException(415, "Receipt must be a real PNG, JPEG, WebP or PDF file")
+    ext, _ = sniffed
     os.makedirs(config.UPLOAD_DIR, exist_ok=True)
     name = f"{uuid.uuid4().hex}{ext}"
-    with open(os.path.join(config.UPLOAD_DIR, name), "wb") as fh:
+    path = os.path.join(config.UPLOAD_DIR, name)
+    with open(path, "wb") as fh:
         fh.write(content)
+    old = expense.receipt_path
     expense.receipt_path = name
-    expense.receipt_name = (file.filename or "receipt")[:200]
+    expense.receipt_name = os.path.basename(file.filename or "receipt")[:200]
     log_activity(db, group.id, user.id, "receipt_attached", {"expense_id": expense.id, "title": expense.title or expense.category})
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        os.remove(path)  # no orphan file if the transaction fails
+        raise
+    if old:
+        try:
+            os.remove(os.path.join(config.UPLOAD_DIR, os.path.basename(old)))
+        except OSError:
+            pass
     push_live(db, group.id, "receipt_attached")
     return {"ok": True, "receipt_name": expense.receipt_name}
 
@@ -234,4 +261,9 @@ def download_receipt(expense_id: int, group: Group = Depends(member_group), db: 
     path = os.path.join(config.UPLOAD_DIR, os.path.basename(expense.receipt_path))
     if not os.path.exists(path):
         raise HTTPException(404, "Receipt file is missing")
-    return FileResponse(path, filename=expense.receipt_name or "receipt")
+    media = RECEIPT_MEDIA.get(os.path.splitext(path)[1], "application/octet-stream")
+    # media type comes from the stored extension (set from the sniffed bytes), never from the user's file name
+    return FileResponse(
+        path, media_type=media, filename=expense.receipt_name or "receipt", content_disposition_type="attachment",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )

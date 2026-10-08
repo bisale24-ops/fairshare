@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import events
 from ..db import get_db
-from ..deps import current_user
+from ..deps import current_user, stream_user
 from ..models import Notification, Outbox, User
 
 router = APIRouter(prefix="/api", tags=["misc"])
@@ -43,7 +43,7 @@ def my_outbox(user: User = Depends(current_user), db: Session = Depends(get_db))
 
 
 @router.get("/stream")
-async def stream(request: Request, user: User = Depends(current_user)):
+async def stream(request: Request, user: User = Depends(stream_user)):
     loop = asyncio.get_running_loop()
     queue = events.subscribe(user.id, loop)
 

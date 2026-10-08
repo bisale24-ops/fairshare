@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class RegisterIn(BaseModel):
@@ -47,15 +47,29 @@ class InviteIn(BaseModel):
     email: EmailStr
 
 
+MAX_PARTICIPANTS = 200
+MAX_USER_ID = 2**31 - 1
+
+
 class SplitIn(BaseModel):
     type: Literal["equal", "shares", "exact"]
-    participants: list[int] | None = None  # equal
-    weights: dict[int, int] | None = None  # shares
-    amounts: dict[int, int] | None = None  # exact, minor units
+    participants: list[Annotated[int, Field(ge=1, le=MAX_USER_ID)]] | None = Field(default=None, max_length=MAX_PARTICIPANTS)  # equal
+    weights: dict[Annotated[int, Field(ge=1, le=MAX_USER_ID)], Annotated[int, Field(ge=1, le=1_000_000)]] | None = None  # shares
+    amounts: dict[Annotated[int, Field(ge=1, le=MAX_USER_ID)], Annotated[int, Field(ge=0, le=10**12)]] | None = None  # exact, minor units
+
+    @model_validator(mode="after")
+    def _bounded_and_unique(self):
+        if self.participants is not None and len(set(self.participants)) != len(self.participants):
+            raise ValueError("participants must not repeat")
+        for name in ("weights", "amounts"):
+            value = getattr(self, name)
+            if value is not None and len(value) > MAX_PARTICIPANTS:
+                raise ValueError(f"{name} has too many entries")
+        return self
 
 
 class ExpenseIn(BaseModel):
-    payer_id: int
+    payer_id: int = Field(ge=1, le=MAX_USER_ID)
     amount_minor: int = Field(gt=0, le=10**12)
     title: str = Field(default="", max_length=200)
     category: str = Field(default="other", max_length=50)
@@ -65,5 +79,5 @@ class ExpenseIn(BaseModel):
 
 
 class SettlementIn(BaseModel):
-    to_user: int
+    to_user: int = Field(ge=1, le=MAX_USER_ID)
     amount_minor: int = Field(gt=0, le=10**12)
