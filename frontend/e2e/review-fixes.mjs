@@ -74,6 +74,22 @@ try {
   await alice.page.getByText("Only the person who added the expense or paid for it can change it").waitFor({ timeout: 5000 });
   assert.equal(await alice.page.getByText("Дрова").count(), 1, "a bystander must not be able to delete it");
 
+  // 4. Alice pays her whole 15.00 debt, Bob confirms, then Bob edits the expense down to 10.00:
+  //    Alice's payment is now bigger than her debt and the UI must say so (the numbers stay correct)
+  await alice.page.getByRole("tab", { name: "Балансы" }).click();
+  await alice.page.getByRole("button", { name: "Я заплатил(а)" }).click();
+  await alice.page.getByRole("button", { name: "Отправить на подтверждение" }).click();
+  await bob.page.getByRole("tab", { name: "Погашения" }).click();
+  await bob.page.getByRole("button", { name: "Подтвердить" }).click();
+  await bob.page.getByRole("tab", { name: "Расходы" }).click();
+  await bob.page.getByRole("button", { name: "Изменить" }).click();
+  await bob.page.getByPlaceholder("0.00").first().fill("10");
+  await bob.page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await bob.page.getByText("После изменения платёж стал больше долга").waitFor({ timeout: 5000 });
+  assert.match(await bob.page.getByRole("status").first().innerText(), /переплатил\(а\) 10,00/);
+  await alice.page.getByRole("tab", { name: "Лента" }).click();
+  await alice.page.getByText("После правки платёж стал больше долга").waitFor({ timeout: 5000 });
+
   console.log("E2E review fixes OK: e-mail invite link joins; failed receipt does not duplicate the expense");
 } finally {
   await browser.close();

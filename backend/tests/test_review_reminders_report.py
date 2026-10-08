@@ -72,3 +72,23 @@ def test_exact_solver_limit_is_fast_and_settles_everyone():
         out[t.from_user] += t.amount
         out[t.to_user] -= t.amount
     assert all(v == 0 for v in out.values())
+
+
+def test_editing_an_expense_down_warns_when_a_confirmed_payment_is_now_too_big(client, api):
+    a, b = api.user(), api.user()
+    g = api.group(a, [b])
+    ids = [a["id"], b["id"]]
+    e = api.expense(g, a, a, 1000, api.equal(ids)).json()          # b owes 500
+    s = client.post(f"/api/groups/{g['id']}/settlements", json={"to_user": a["id"], "amount_minor": 400}, headers=b["h"]).json()
+    client.post(f"/api/settlements/{s['id']}/confirm", headers=a["h"])  # b now owes 100
+    body = {"payer_id": a["id"], "amount_minor": 400, "title": "x", "category": "food", "spent_on": "2026-10-01", "split": api.equal(ids)}
+    r = client.put(f"/api/groups/{g['id']}/expenses/{e['id']}", json=body, headers=a["h"])
+    assert r.status_code == 200
+    assert r.json()["warnings"] == [{"user_id": b["id"], "name": b["name"], "amount_minor": 200}]  # b paid 400, owed 200
+    assert api.balances(g, a) == {a["id"]: -200, b["id"]: 200}
+    feed = client.get(f"/api/groups/{g['id']}/activity", headers=a["h"]).json()
+    assert feed[0]["kind"] == "settlement_overpaid"
+    ok = client.put(f"/api/groups/{g['id']}/expenses/{e['id']}", json={**body, "amount_minor": 1000}, headers=a["h"])
+    assert ok.json()["warnings"] == []  # back to a normal debt: nothing to warn about
+    gone = client.delete(f"/api/groups/{g['id']}/expenses/{e['id']}", headers=a["h"]).json()
+    assert gone["warnings"] == [{"user_id": b["id"], "name": b["name"], "amount_minor": 400}]

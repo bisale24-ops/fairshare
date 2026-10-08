@@ -64,6 +64,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 .danger-btn { background: #fff; color: var(--coral); border-color: var(--coral); font-weight: 600; justify-self: start; }
 .small-btn { padding: 5px 10px; font-size: 13px; }
 .error { background: #fff0ed; color: #b3260f; border: 1px solid #ffc8bd; padding: 8px 12px; border-radius: 8px; }
+.warn-box { background: #fff6dd; border: 1px solid var(--marigold); color: #5e4300; padding: 8px 12px; border-radius: 8px; font-size: 14px; }
 .live { background: var(--blue-tint); color: #004d94; padding: 6px 12px; border-radius: 8px; }
 .ok { color: #12802a; } .warn { color: #b3260f; }
 .money { font-variant-numeric: tabular-nums; font-weight: 600; }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api, type Expense, type Group } from "../api";
+import { api, type Expense, type Group, type Overpaid } from "../api";
 import { formatMoney, minorToInput, parseMoney } from "../money";
 
 const CATEGORIES: [string, string][] = [
@@ -7,7 +7,7 @@ const CATEGORIES: [string, string][] = [
   ["groceries", "Продукты"], ["utilities", "Коммунальные"], ["other", "Другое"],
 ];
 
-export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; meId: number; expense?: Expense; onDone: () => void }) {
+export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; meId: number; expense?: Expense; onDone: (warnings?: Overpaid[]) => void }) {
   const ids = group.members.map((m) => m.id);
   const [title, setTitle] = useState(expense?.title ?? "");
   const [amount, setAmount] = useState(expense ? minorToInput(expense.amount_minor) : "");
@@ -78,7 +78,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
           return;
         }
       }
-      onDone();
+      onDone(saved.warnings);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -143,7 +143,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
       {error && <div className="error" role="alert">{error}</div>}
       <div className="row">
         <button className="primary" disabled={busy}>{expense || savedId ? "Сохранить" : "Добавить расход"}</button>
-        <button type="button" className="ghost" onClick={onDone}>Отмена</button>
+        <button type="button" className="ghost" onClick={() => onDone()}>Отмена</button>
       </div>
     </form>
   );

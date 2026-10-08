@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .. import config
 from ..db import get_db
 from ..deps import current_user, member_group
-from ..ledger import fmt, log_activity, member_ids, notify, push_live, refresh_debt_state, user_names
+from ..ledger import fmt, log_activity, member_ids, notify, overpaid, push_live, refresh_debt_state, user_names
 from ..models import Expense, ExpenseShare, Group, Membership, User, now_utc
 from ..money import SplitError, split_equal, split_exact, split_shares
 from ..schemas import ExpenseIn
@@ -179,9 +179,12 @@ def edit_expense(
         f"{user.name} edited \"{label}\" in {group.name}: now {fmt(expense.amount, group.currency)}",
     )
     refresh_debt_state(db, group)
+    warnings = overpaid(db, group.id)
+    if warnings:
+        log_activity(db, group.id, user.id, "settlement_overpaid", {"expense_id": expense.id, "people": warnings})
     db.commit()
     push_live(db, group.id, "expense_edited")
-    return expense_view(expense, user_names(db, list(members)))
+    return {**expense_view(expense, user_names(db, list(members))), "warnings": warnings}
 
 
 @router.delete("/groups/{group_id}/expenses/{expense_id}")
@@ -200,9 +203,12 @@ def delete_expense(
         f"{user.name} deleted \"{label}\" in {group.name}",
     )
     refresh_debt_state(db, group)
+    warnings = overpaid(db, group.id)
+    if warnings:
+        log_activity(db, group.id, user.id, "settlement_overpaid", {"expense_id": expense.id, "people": warnings})
     db.commit()
     push_live(db, group.id, "expense_deleted")
-    return {"ok": True}
+    return {"ok": True, "warnings": warnings}
 
 
 def _sniff_receipt(head: bytes) -> tuple[str, str] | None:

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, getToken, type Activity, type Expense, type Group, type Report, type Settlement, type User } from "../api";
+import { api, getToken, type Activity, type Expense, type Group, type Overpaid, type Report, type Settlement, type User } from "../api";
 import { ExpenseForm } from "../components/ExpenseForm";
 import { Money } from "../components/Money";
 import { useResource } from "../hooks";
@@ -68,19 +68,32 @@ function ExpensesTab({ g, user }: { g: Group; user: User }) {
   const list = useResource(() => api.expenses(g.id), [g.id]);
   const [editing, setEditing] = useState<Expense | "new" | null>(null);
   const [error, setError] = useState("");
+  const [warnings, setWarnings] = useState<Overpaid[]>([]);
 
   async function remove(e: Expense) {
     if (!confirm(`Удалить «${e.title || e.category}»? Балансы пересчитаются.`)) return;
-    try { await api.deleteExpense(g.id, e.id); list.reload(); } catch (err: any) { setError(err.message); }
+    try {
+      const res = await api.deleteExpense(g.id, e.id);
+      setWarnings(res.warnings);
+      setError("");
+      list.reload();
+    } catch (err: any) { setError(err.message); }
   }
 
   return (
     <>
       {error && <div className="error" role="alert">{error}</div>}
+      {warnings.length > 0 && (
+        <div className="warn-box" role="status">
+          После изменения платёж стал больше долга:{" "}
+          {warnings.map((w) => `${w.name} переплатил(а) ${formatMoney(w.amount_minor, g.currency)}`).join("; ")}.
+          Баланс посчитан верно, теперь группа должна этому участнику. <button className="link" onClick={() => setWarnings([])}>Понятно</button>
+        </div>
+      )}
       {!editing && !g.closed && <button className="primary" onClick={() => setEditing("new")}>+ Добавить расход</button>}
       {g.closed && <div className="card muted">Группа закрыта: новые расходы не добавляются. Её можно открыть обратно в настройках.</div>}
       {editing && (
-        <ExpenseForm group={g} meId={user.id} expense={editing === "new" ? undefined : editing} onDone={() => { setEditing(null); list.reload(); }} />
+        <ExpenseForm group={g} meId={user.id} expense={editing === "new" ? undefined : editing} onDone={(w) => { setEditing(null); setWarnings(w ?? []); list.reload(); }} />
       )}
       <ul className="list">
         {(list.data ?? []).length === 0 && <li className="muted">Расходов пока нет.</li>}
@@ -229,6 +242,7 @@ function describe(a: Activity, currency: string): string {
     case "settlement_proposed": return `${who} отметил(а) платёж ${formatMoney(p.amount_minor, currency)}`;
     case "settlement_confirmed": return `${who} подтвердил(а) платёж ${formatMoney(p.amount_minor, currency)}`;
     case "settlement_rejected": return `${who} отклонил(а) платёж ${formatMoney(p.amount_minor, currency)}`;
+    case "settlement_overpaid": return `После правки платёж стал больше долга: ${(p.people ?? []).map((x: any) => `${x.name} +${formatMoney(x.amount_minor, currency)}`).join(", ")}`;
     case "group_closed": return `${who} закрыл(а) группу`;
     case "group_reopened": return `${who} открыл(а) группу снова`;
     case "group_updated": return `${who} изменил(а) настройки группы`;

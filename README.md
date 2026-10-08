@@ -27,7 +27,7 @@ cd frontend && npm install && npm run dev                                       
 ## Tests (the proof)
 
 ```bash
-cd backend && DATABASE_URL=postgresql+psycopg://fairshare:fairshare@localhost:5433/fairshare uv run pytest -q   # 44 tests
+cd backend && DATABASE_URL=postgresql+psycopg://fairshare:fairshare@localhost:5433/fairshare uv run pytest -q   # 45 tests
 cd frontend && npm test && npm run build                      # 5 unit tests + type-check + build
 cd frontend && BASE_URL=http://localhost:8080 npm run e2e      # two browsers, real UI (needs Google Chrome + the running stack)
 cd frontend && BASE_URL=http://localhost:8080 node e2e/review-fixes.mjs   # e-mail invite link joins; failed receipt never duplicates an expense
@@ -77,6 +77,9 @@ notice (see DEVLOG, 2026-10-09 01:00): two of three mutants were caught; the thi
   must stay true. A group cannot be closed while payments are pending. Reopen it to continue.
 - **Who may do what.** Any member can add expenses (also on behalf of someone else), invite, close and reopen. Only the
   person who added an expense or paid for it can edit or delete it.
+- **Edited-down expenses.** If an edit or delete makes an earlier confirmed payment bigger than the debt, the balance
+  simply flips (it stays exact), the response carries `warnings`, the UI shows who overpaid and by how much, and the feed
+  records `settlement_overpaid`.
 - **Concurrency.** Creating, editing and deleting an expense, and closing the group, take a row lock on the group, so a
   closing group cannot race a new expense. Independent expenses never conflict.
 - **Reminders.** A member who has been continuously in debt longer than the group's term gets an e-mail with the amount and
@@ -110,15 +113,13 @@ weekly cap lost on a paid debt, closed time counted as debt time, a failed recei
 stale data when switching groups, missed events after a dropped connection, session expiry handling.
 
 Known gaps, not hidden:
-- The browser e2e covers happy paths (create, join, add, pay, confirm, close; e-mail invite; failed receipt); editing,
+- The browser e2e covers happy paths (create, join, add, pay, confirm, close; e-mail invite; failed receipt; over-payment warning); editing,
   deleting and reminders in the browser are covered at API level only. One e2e run failed once without a captured reason
   and passed 7 times in a row afterwards; CI will show whether it is flaky.
 - Live updates need a single API worker (in-process hub). No password reset, no e-mail verification (e-mail is a stub, so the
   mailbox for an address is whoever registered it first). Registration reveals whether an e-mail exists (409).
 - Throttling is in memory, per process.
 - Currencies are assumed to have two decimal places (JPY and similar would need a per-currency exponent).
-- After an old expense is edited down, an earlier confirmed settlement can exceed the new debt and flip the direction of
-  the debt. The numbers stay correct; the UI does not warn about it. (Planned next.)
 - "Who owes you" across all groups is derived from each group's minimal plan, so counterparties can change after an edit;
   the totals are exact, the attribution to a person is a view of the plan.
 - Any member can close, reopen or change a group's settings (the case does not say who may).
@@ -127,7 +128,7 @@ Known gaps, not hidden:
 
 ## Next steps (what I would do next)
 
-A warning when an edit over-settles a debt; more browser e2e paths (edit/delete, reminders); LISTEN/NOTIFY hub and multiple workers; per-currency decimals;
+More browser e2e paths (edit/delete, reminders); LISTEN/NOTIFY hub and multiple workers; per-currency decimals;
 password reset and e-mail verification; real SMTP transport behind the existing `send_email` seam.
 
 ## Made with

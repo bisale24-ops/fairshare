@@ -97,6 +97,25 @@ def refresh_debt_state(db: Session, group: Group, now: datetime | None = None, r
             db.delete(state)
 
 
+def overpaid(db: Session, group_id: int) -> list[dict]:
+    """Members who sent confirmed payments but are now owed money: an edit made their payment larger than the debt.
+
+    The numbers stay correct (the balance simply flips); this exists so the UI can say so instead of leaving it a surprise.
+    """
+    balances = compute_balances(db, group_id)
+    sent: dict[int, int] = {}
+    for frm, amount in db.execute(
+        select(Settlement.from_user, Settlement.amount).where(Settlement.group_id == group_id, Settlement.status == "confirmed")
+    ):
+        sent[frm] = sent.get(frm, 0) + amount
+    names = user_names(db, list(sent))
+    return [
+        {"user_id": uid, "name": names.get(uid, "?"), "amount_minor": min(balances.get(uid, 0), total)}
+        for uid, total in sent.items()
+        if balances.get(uid, 0) > 0
+    ]
+
+
 def user_names(db: Session, ids: list[int]) -> dict[int, str]:
     if not ids:
         return {}

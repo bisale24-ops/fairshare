@@ -12,6 +12,7 @@ export type Expense = {
   spent_on: string; comment: string; split_type: "equal" | "shares" | "exact"; has_receipt: boolean;
   receipt_name: string | null; shares: Share[];
 };
+export type Overpaid = { user_id: number; name: string; amount_minor: number };
 export type Settlement = {
   id: number; from_user: number; from_name: string; to_user: number; to_name: string;
   amount_minor: number; status: "pending" | "confirmed" | "rejected"; created_at: string;
@@ -93,8 +94,8 @@ export const api = {
   join: (t: string) => call<Group>("POST", `/join/${t}`),
   expenses: (id: number) => call<Expense[]>("GET", `/groups/${id}/expenses`),
   saveExpense: (gid: number, eid: number | null, body: unknown) =>
-    eid ? call<Expense>("PUT", `/groups/${gid}/expenses/${eid}`, body) : call<Expense>("POST", `/groups/${gid}/expenses`, body),
-  deleteExpense: (gid: number, eid: number) => call("DELETE", `/groups/${gid}/expenses/${eid}`),
+    eid ? call<Expense & { warnings: Overpaid[] }>("PUT", `/groups/${gid}/expenses/${eid}`, body) : call<Expense & { warnings?: Overpaid[] }>("POST", `/groups/${gid}/expenses`, body),
+  deleteExpense: (gid: number, eid: number) => call<{ ok: boolean; warnings: Overpaid[] }>("DELETE", `/groups/${gid}/expenses/${eid}`),
   uploadReceipt: (gid: number, eid: number, file: File) => {
     const f = new FormData();
     f.append("file", file);
