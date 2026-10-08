@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney, minorToInput, parseMoney, pluralize } from "./money";
+import { exponentOf, formatMoney, minorToInput, parseMoney, pluralize } from "./money";
 
 describe("money", () => {
   it("parses decimals without floating point", () => {
@@ -26,5 +26,18 @@ describe("money", () => {
     expect([1, 2, 5, 11, 12, 21, 22, 25, 111].map((n) => pluralize(n, f))).toEqual([
       "1 расход", "2 расхода", "5 расходов", "11 расходов", "12 расходов", "21 расход", "22 расхода", "25 расходов", "111 расходов",
     ]);
+  });
+  it("respects the number of minor digits of the currency", () => {
+    expect([exponentOf("USD"), exponentOf("JPY"), exponentOf("KWD"), exponentOf("kgs")]).toEqual([2, 0, 3, 2]);
+    expect(parseMoney("1000", "JPY")).toBe(1000);
+    expect(parseMoney("10.5", "JPY")).toBeNull(); // no fractional yen
+    expect(parseMoney("1.234", "KWD")).toBe(1234);
+    expect(parseMoney("1.2345", "KWD")).toBeNull();
+    expect(parseMoney("1.005", "USD")).toBeNull();
+    expect(formatMoney(1234567, "JPY")).toBe("1\u00a0234\u00a0567\u00a0JPY");
+    expect(formatMoney(1500, "KWD")).toBe("1,500\u00a0KWD");
+    expect(minorToInput(1500, "KWD")).toBe("1.500");
+    expect(minorToInput(1000, "JPY")).toBe("1000");
+    expect(parseMoney(minorToInput(1999, "KWD"), "KWD")).toBe(1999);
   });
 });

@@ -19,6 +19,7 @@ from .models import (
     User,
     now_utc,
 )
+from .currency import format_minor
 from .money import Transfer, minimal_transfers
 
 
@@ -123,6 +124,4 @@ def user_names(db: Session, ids: list[int]) -> dict[int, str]:
 
 
 def fmt(amount: int, currency: str) -> str:
-    sign = "-" if amount < 0 else ""
-    a = abs(amount)
-    return f"{sign}{a // 100}.{a % 100:02d} {currency}"
+    return format_minor(amount, currency)

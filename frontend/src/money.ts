@@ -1,22 +1,31 @@
-/** Money helpers. The API speaks integer minor units (cents); never floats. */
+/** Money helpers. The API speaks integer minor units; never floats. How many digits a minor unit has depends on the currency. */
+import { CURRENCY_EXPONENTS } from "./currencies";
+
+export const exponentOf = (currency: string): number => CURRENCY_EXPONENTS[currency.toUpperCase()] ?? 2;
 
 /** "12.34", "12,3", ".5", "1 234,50" -> minor units. Null if it is not a plain amount or exceeds the server cap (10^12 minor). */
-export function parseMoney(input: string): number | null {
-  const m = input.replace(/[\s\u00a0]/g, "").match(/^(\d{0,10})(?:[.,](\d{1,2}))?$/);
+export function parseMoney(input: string, currency = "USD"): number | null {
+  const exp = exponentOf(currency);
+  const m = input.replace(/[\s\u00a0]/g, "").match(new RegExp(`^(\\d{0,12})(?:[.,](\\d{1,${Math.max(exp, 1)}}))?$`));
   if (!m || (m[1] === "" && m[2] === undefined)) return null;
-  const cents = (m[2] ?? "").padEnd(2, "0");
-  return Number(m[1] || "0") * 100 + Number(cents);
+  if (exp === 0 && m[2] !== undefined) return null; // yen and the like have no fractional part
+  const minor = Number(m[1] || "0") * 10 ** exp + Number((m[2] ?? "").padEnd(exp, "0") || "0");
+  return minor <= 10 ** 12 ? minor : null;
 }
 
 export function formatMoney(minor: number, currency: string): string {
+  const exp = exponentOf(currency);
   const sign = minor < 0 ? "−" : "";
   const abs = Math.abs(minor);
-  const whole = Math.floor(abs / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  return `${sign}${whole},${String(abs % 100).padStart(2, "0")} ${currency}`;
+  const whole = Math.floor(abs / 10 ** exp).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
+  const frac = exp === 0 ? "" : `,${String(abs % 10 ** exp).padStart(exp, "0")}`;
+  return `${sign}${whole}${frac}\u00a0${currency}`;
 }
 
-export function minorToInput(minor: number): string {
-  return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, "0")}`;
+export function minorToInput(minor: number, currency = "USD"): string {
+  const exp = exponentOf(currency);
+  if (exp === 0) return String(minor);
+  return `${Math.floor(minor / 10 ** exp)}.${String(minor % 10 ** exp).padStart(exp, "0")}`;
 }
 
 /** Russian plural: 1 расход, 2 расхода, 5 расходов, 11 расходов, 21 расход. */

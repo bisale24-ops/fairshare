@@ -146,7 +146,7 @@ function BalancesTab({ g, user }: { g: Group; user: User }) {
 
   async function pay() {
     if (!paying) return;
-    const minor = parseMoney(paying.amount);
+    const minor = parseMoney(paying.amount, g.currency);
     if (!minor) return setError("Неверная сумма");
     try {
       await api.settle(g.id, paying.to, minor);
@@ -178,7 +178,7 @@ function BalancesTab({ g, user }: { g: Group; user: User }) {
             <span className="spacer" />
             <span>{formatMoney(t.amount_minor, g.currency)}</span>
             {t.from_user === user.id && (
-              <button className="primary small-btn" onClick={() => setPaying({ to: t.to_user, toName: t.to_name, amount: minorToInput(t.amount_minor) })}>Я заплатил(а)</button>
+              <button className="primary small-btn" onClick={() => setPaying({ to: t.to_user, toName: t.to_name, amount: minorToInput(t.amount_minor, g.currency) })}>Я заплатил(а)</button>
             )}
           </div>
         ))}

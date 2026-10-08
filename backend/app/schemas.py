@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Literal
 
+from .currency import CURRENCIES
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
@@ -34,8 +35,11 @@ class GroupIn(BaseModel):
 
     @field_validator("currency")
     @classmethod
-    def upper(cls, v: str) -> str:
-        return v.upper()
+    def known(cls, v: str) -> str:
+        v = v.upper()
+        if v not in CURRENCIES:
+            raise ValueError(f"unknown currency code {v}")
+        return v
 
 
 class GroupPatch(BaseModel):

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { api, type Expense, type Group, type Overpaid } from "../api";
-import { formatMoney, minorToInput, parseMoney } from "../money";
+import { exponentOf, formatMoney, minorToInput, parseMoney } from "../money";
 
 const CATEGORIES: [string, string][] = [
   ["food", "Еда"], ["transport", "Транспорт"], ["housing", "Жильё"], ["entertainment", "Развлечения"],
@@ -10,7 +10,7 @@ const CATEGORIES: [string, string][] = [
 export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; meId: number; expense?: Expense; onDone: (warnings?: Overpaid[]) => void }) {
   const ids = group.members.map((m) => m.id);
   const [title, setTitle] = useState(expense?.title ?? "");
-  const [amount, setAmount] = useState(expense ? minorToInput(expense.amount_minor) : "");
+  const [amount, setAmount] = useState(expense ? minorToInput(expense.amount_minor, group.currency) : "");
   const [payer, setPayer] = useState(expense?.payer_id ?? meId);
   const [category, setCategory] = useState(expense?.category ?? "food");
   const [date, setDate] = useState(expense?.spent_on ?? new Date().toISOString().slice(0, 10));
@@ -21,7 +21,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
     Object.fromEntries(ids.map((i) => [i, String(expense?.shares.find((s) => s.user_id === i)?.weight ?? 1)])),
   );
   const [amounts, setAmounts] = useState<Record<number, string>>(
-    Object.fromEntries(ids.map((i) => [i, expense?.split_type === "exact" ? minorToInput(expense.shares.find((s) => s.user_id === i)?.amount_minor ?? 0) : ""])),
+    Object.fromEntries(ids.map((i) => [i, expense?.split_type === "exact" ? minorToInput(expense.shares.find((s) => s.user_id === i)?.amount_minor ?? 0, group.currency) : ""])),
   );
   const [file, setFile] = useState<File | null>(null);
   // Set once the expense is saved. If the receipt upload then fails, pressing the button again edits this expense
@@ -30,9 +30,9 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const total = parseMoney(amount);
+  const total = parseMoney(amount, group.currency);
   const exactSum = useMemo(
-    () => ids.reduce((acc, i) => acc + (parseMoney(amounts[i] || "0") ?? 0), 0),
+    () => ids.reduce((acc, i) => acc + (parseMoney(amounts[i] || "0", group.currency) ?? 0), 0),
     [amounts, ids],
   );
 
@@ -56,7 +56,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
     } else {
       const a: Record<number, number> = {};
       for (const i of ids) {
-        const v = parseMoney(amounts[i] || "0");
+        const v = parseMoney(amounts[i] || "0", group.currency);
         if (v === null) return setError("Неверная сумма у участника");
         if (v > 0) a[i] = v;
       }
@@ -97,7 +97,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
       <h3>{expense ? "Редактировать расход" : "Новый расход"}</h3>
       <div className="grid3">
         <label>Название<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ужин" maxLength={200} /></label>
-        <label>Сумма ({group.currency})<input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" required /></label>
+        <label>Сумма ({group.currency})<input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={exponentOf(group.currency) === 0 ? "0" : "0.00"} required /></label>
         <label>Кто заплатил
           <select value={payer} onChange={(e) => setPayer(Number(e.target.value))}>
             {group.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -130,7 +130,7 @@ export function ExpenseForm({ group, meId, expense, onDone }: { group: Group; me
                 <input className="narrow-input" inputMode="numeric" value={weights[m.id] ?? "1"} onChange={(e) => setWeights({ ...weights, [m.id]: e.target.value })} aria-label={`Доля: ${m.name}`} />
               )}
               {type === "exact" && (
-                <input className="narrow-input" inputMode="decimal" placeholder="0.00" value={amounts[m.id] ?? ""} onChange={(e) => setAmounts({ ...amounts, [m.id]: e.target.value })} aria-label={`Сумма: ${m.name}`} />
+                <input className="narrow-input" inputMode="decimal" placeholder={exponentOf(group.currency) === 0 ? "0" : "0.00"} value={amounts[m.id] ?? ""} onChange={(e) => setAmounts({ ...amounts, [m.id]: e.target.value })} aria-label={`Сумма: ${m.name}`} />
               )}
             </div>
           ))}
