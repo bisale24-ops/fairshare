@@ -75,6 +75,8 @@ try {
   // 4. Alice presses again: it works, exactly once
   await alice.page.getByRole("button", { name: "Добавить расход", exact: true }).click();
   await alice.page.getByRole("button", { name: "+ Добавить расход" }).waitFor({ timeout: 8000 });
+  await alice.page.getByText("Краска").first().waitFor({ timeout: 8000 }); // the list refetches after the form closes: wait, do not read blindly
+  await alice.page.waitForTimeout(700);                                       // give a (wrong) duplicate time to appear before counting
   assert.equal(await alice.page.getByText("Краска").count(), 1);
 
   // 5. Bob's page, which was not reloaded, hears about it by itself (its stream reconnected)
