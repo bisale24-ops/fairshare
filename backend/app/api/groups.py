@@ -223,6 +223,13 @@ def _report(db: Session, group: Group) -> dict:
         by_category[e.category] += e.amount
         for s in e.shares:
             owed[s.user_id] += s.amount
+    sent: dict[int, int] = defaultdict(int)
+    received: dict[int, int] = defaultdict(int)
+    for frm, to, amount in db.execute(
+        select(Settlement.from_user, Settlement.to_user, Settlement.amount).where(Settlement.group_id == group.id, Settlement.status == "confirmed")
+    ):
+        sent[frm] += amount
+        received[to] += amount
     settled = db.scalar(
         select(func.coalesce(func.sum(Settlement.amount), 0)).where(Settlement.group_id == group.id, Settlement.status == "confirmed")
     )
@@ -238,6 +245,8 @@ def _report(db: Session, group: Group) -> dict:
                 "name": names[uid],
                 "paid_minor": paid[uid],
                 "share_minor": owed[uid],
+                "settled_out_minor": sent[uid],
+                "settled_in_minor": received[uid],
                 "balance_minor": balances.get(uid, 0),
             }
             for uid in ids
@@ -288,7 +297,7 @@ def reopen_group(group: Group = Depends(member_group), user: User = Depends(curr
         raise HTTPException(409, "The group is not closed")
     group.closed = False
     group.closed_at = None
-    refresh_debt_state(db, group)
+    refresh_debt_state(db, group, restart=True)
     log_activity(db, group.id, user.id, "group_reopened", {})
     db.commit()
     push_live(db, group.id, "group_reopened")

@@ -74,18 +74,27 @@ def push_live(db: Session, group_id: int, kind: str) -> None:
     events.publish(member_ids(db, group_id), {"type": "group_changed", "group_id": group_id, "kind": kind})
 
 
-def refresh_debt_state(db: Session, group: Group, now: datetime | None = None) -> None:
-    """Keep 'in debt since' in sync: set when a balance turns negative, cleared when it stops."""
+def refresh_debt_state(db: Session, group: Group, now: datetime | None = None, restart: bool = False) -> None:
+    """Keep 'in debt since' in sync: set when a balance turns negative, cleared (row kept) when it stops.
+
+    restart=True (used on reopen) moves every current debtor's clock to now: while a group is closed nobody can act on
+    a debt, so the closed time must not count towards the reminder term.
+    """
     now = now or now_utc()
     balances = compute_balances(db, group.id)
     states = {s.user_id: s for s in db.scalars(select(DebtState).where(DebtState.group_id == group.id))}
     for uid, bal in balances.items():
-        if bal < 0 and uid not in states:
-            db.add(DebtState(group_id=group.id, user_id=uid, since=now))
-        elif bal >= 0 and uid in states:
-            db.delete(states[uid])
-    for uid in set(states) - set(balances):
-        db.delete(states[uid])
+        state = states.get(uid)
+        if bal < 0:
+            if state is None:
+                db.add(DebtState(group_id=group.id, user_id=uid, since=now))
+            elif state.since is None or restart:
+                state.since = now
+        elif state is not None:
+            state.since = None
+    for uid, state in states.items():
+        if uid not in balances:
+            db.delete(state)
 
 
 def user_names(db: Session, ids: list[int]) -> dict[int, str]:

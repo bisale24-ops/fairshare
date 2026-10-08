@@ -157,12 +157,16 @@ class Outbox(Base):
 
 
 class DebtState(Base):
-    """Since when a member has been continuously in debt in a group."""
+    """Per member and group: since when they have been continuously in debt (NULL = not in debt now).
+
+    The row is kept when a debt is paid, so last_reminded_at keeps enforcing 'at most one reminder a week'
+    even if the person falls into debt again a day later.
+    """
 
     __tablename__ = "debt_state"
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    since: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

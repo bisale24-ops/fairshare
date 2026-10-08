@@ -81,7 +81,7 @@ def _greedy(balances: dict[int, int]) -> list[Transfer]:
     return out
 
 
-OPTIMAL_LIMIT = 14
+OPTIMAL_LIMIT = 12  # the DP is O(3^n): 12 people is about 0.05 s, 14 was about 0.25 s
 
 
 def minimal_transfers(balances: dict[int, int]) -> list[Transfer]:
