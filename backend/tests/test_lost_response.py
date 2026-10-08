@@ -44,8 +44,14 @@ class DroppingProxy:
             length = next((int(h.split(b":")[1]) for h in head.split(b"\r\n") if h.lower().startswith(b"content-length")), 0)
             while len(rest) < length:
                 rest += client.recv(1 << 20)
-            upstream.sendall(head + b"\r\n\r\n" + rest)
-            response = upstream.recv(1 << 20)  # the server has handled (and committed) the request by now
+            # Ask the server to close the connection after answering, so "the whole response" is simply "everything until EOF".
+            # (A single recv() can return just the headers when the network is slow: that is what broke this on CI.)
+            lines = [h for h in head.split(b"\r\n") if not h.lower().startswith(b"connection:")]
+            upstream.sendall(b"\r\n".join(lines) + b"\r\nConnection: close\r\n\r\n" + rest)
+            response = b""
+            while chunk := upstream.recv(1 << 16):
+                response += chunk
+            # the server has now handled (and committed) the request and finished answering
             if self.drop_next_response:
                 self.drop_next_response = False
                 return  # close both sockets without telling the client anything
